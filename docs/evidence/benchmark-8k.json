@@ -1,0 +1,692 @@
+{
+  "benchmark_date": "2026-09-08",
+  "exported_on": "2026-09-09",
+  "source_relative_path": "work/qwen/benchmark_daily_q4/selection_summary.json",
+  "source_sha256": "6f276eead396947bf458824ae771f951366b836818eb6ed9767ea7468ff9e464",
+  "extraction": "Selected aggregate and per-case fields, unchanged numeric values; not a new run.",
+  "scope": "Historical 8192-context suite. Adaptive depth 4 is the historical policy, not current 4-16.",
+  "config": {
+    "index": null,
+    "context": 8192,
+    "resident_experts": 24,
+    "prefill_batch": 2048,
+    "depths": "0,1,2,3,4",
+    "adaptive": false,
+    "include_adaptive": true,
+    "cases": "arithmetic,grounding,italian,json,python,reasoning",
+    "long_context": false,
+    "multiturn": true,
+    "max_tokens": null
+  },
+  "load_seconds": 840.8859941079972,
+  "timing": "sum of decode times and committed decode tokens; mean warmed bracketing N=0 times; legacy reports use only their final N=0",
+  "limitations": "small prompt suite; manual quality review and long-context checks remain separate",
+  "depths": [
+    {
+      "depth": 0,
+      "adaptive": false,
+      "cases": 6,
+      "committed_decode_tokens": 260,
+      "decode_seconds": 65.53313659450214,
+      "committed_tokens_per_second": 3.9674585028456053,
+      "speedup_vs_causal": 1.0,
+      "acceptance": null,
+      "quality_failures": [
+        "json"
+      ],
+      "output_limit_cases": [],
+      "per_case": [
+        {
+          "case": "arithmetic",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.107467098001507,
+          "baseline_decode_seconds": 1.107467098001507,
+          "tokens_per_second": 2.708884088216874,
+          "prefill_seconds": 3.334252322001703,
+          "proposed": 0,
+          "accepted": 0,
+          "quality": {
+            "passed": true,
+            "expected": "1083"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "grounding",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.1717717424999137,
+          "baseline_decode_seconds": 1.1717717424999137,
+          "tokens_per_second": 2.5602255893282226,
+          "prefill_seconds": 4.960686413000076,
+          "proposed": 0,
+          "accepted": 0,
+          "quality": {
+            "passed": true,
+            "expected": "Non specificato."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "json",
+          "committed_decode_tokens": 37,
+          "decode_seconds": 10.21526665050078,
+          "baseline_decode_seconds": 10.21526665050078,
+          "tokens_per_second": 3.622029778164054,
+          "prefill_seconds": 4.909033309999359,
+          "proposed": 0,
+          "accepted": 0,
+          "quality": {
+            "passed": false,
+            "expected": {
+              "nome": "Marta Rossi",
+              "città": "Bologna",
+              "biciclette": 3
+            },
+            "reason": "not standalone JSON"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "python",
+          "committed_decode_tokens": 52,
+          "decode_seconds": 13.815752447000705,
+          "baseline_decode_seconds": 13.815752447000705,
+          "tokens_per_second": 3.763819610946258,
+          "prefill_seconds": 4.697639515999981,
+          "proposed": 0,
+          "accepted": 0,
+          "quality": {
+            "passed": null,
+            "review": "Verificare sintassi e comportamento su lista vuota, ripetizioni e numeri negativi."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "italian",
+          "committed_decode_tokens": 164,
+          "decode_seconds": 38.51099106899892,
+          "baseline_decode_seconds": 38.51099106899892,
+          "tokens_per_second": 4.2585245263142255,
+          "prefill_seconds": 4.8810381069997675,
+          "proposed": 0,
+          "accepted": 0,
+          "quality": {
+            "passed": null,
+            "review": "Verificare italiano, correttezza, concisione e soluzione praticabile."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "reasoning",
+          "committed_decode_tokens": 1,
+          "decode_seconds": 0.7118875875003141,
+          "baseline_decode_seconds": 0.7118875875003141,
+          "tokens_per_second": 1.4047161624370348,
+          "prefill_seconds": 3.9609704169997713,
+          "proposed": 0,
+          "accepted": 0,
+          "quality": {
+            "passed": true,
+            "expected": "15"
+          },
+          "at_output_limit": false
+        }
+      ]
+    },
+    {
+      "depth": 1,
+      "adaptive": false,
+      "cases": 6,
+      "committed_decode_tokens": 260,
+      "decode_seconds": 60.67030412600434,
+      "committed_tokens_per_second": 4.285457337744901,
+      "speedup_vs_causal": 1.0801517734013386,
+      "acceptance": 0.8424657534246576,
+      "quality_failures": [
+        "json"
+      ],
+      "output_limit_cases": [],
+      "per_case": [
+        {
+          "case": "arithmetic",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 0.9375537039995834,
+          "baseline_decode_seconds": 1.107467098001507,
+          "tokens_per_second": 3.1998167008482463,
+          "prefill_seconds": 3.3596743989983224,
+          "proposed": 2,
+          "accepted": 2,
+          "quality": {
+            "passed": true,
+            "expected": "1083"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "grounding",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.001159004001238,
+          "baseline_decode_seconds": 1.1717717424999137,
+          "tokens_per_second": 2.9965270132018813,
+          "prefill_seconds": 4.981394980000914,
+          "proposed": 2,
+          "accepted": 2,
+          "quality": {
+            "passed": true,
+            "expected": "Non specificato."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "json",
+          "committed_decode_tokens": 37,
+          "decode_seconds": 9.021534685998631,
+          "baseline_decode_seconds": 10.21526665050078,
+          "tokens_per_second": 4.101297760061133,
+          "prefill_seconds": 4.993937677998474,
+          "proposed": 20,
+          "accepted": 19,
+          "quality": {
+            "passed": false,
+            "expected": {
+              "nome": "Marta Rossi",
+              "città": "Bologna",
+              "biciclette": 3
+            },
+            "reason": "not standalone JSON"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "python",
+          "committed_decode_tokens": 52,
+          "decode_seconds": 11.57434282900067,
+          "baseline_decode_seconds": 13.815752447000705,
+          "tokens_per_second": 4.492695677694012,
+          "prefill_seconds": 4.746645917999558,
+          "proposed": 27,
+          "accepted": 27,
+          "quality": {
+            "passed": null,
+            "review": "Verificare sintassi e comportamento su lista vuota, ripetizioni e numeri negativi."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "italian",
+          "committed_decode_tokens": 164,
+          "decode_seconds": 37.49358525700154,
+          "baseline_decode_seconds": 38.51099106899892,
+          "tokens_per_second": 4.37408156290881,
+          "prefill_seconds": 4.9505850820023625,
+          "proposed": 94,
+          "accepted": 72,
+          "quality": {
+            "passed": null,
+            "review": "Verificare italiano, correttezza, concisione e soluzione praticabile."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "reasoning",
+          "committed_decode_tokens": 1,
+          "decode_seconds": 0.6421286460026749,
+          "baseline_decode_seconds": 0.7118875875003141,
+          "tokens_per_second": 1.5573203379495926,
+          "prefill_seconds": 4.0043502370026545,
+          "proposed": 1,
+          "accepted": 1,
+          "quality": {
+            "passed": true,
+            "expected": "15"
+          },
+          "at_output_limit": false
+        }
+      ]
+    },
+    {
+      "depth": 2,
+      "adaptive": false,
+      "cases": 6,
+      "committed_decode_tokens": 260,
+      "decode_seconds": 61.965813639999396,
+      "committed_tokens_per_second": 4.195861955602049,
+      "speedup_vs_causal": 1.0575692102620922,
+      "acceptance": 0.7688679245283019,
+      "quality_failures": [
+        "json"
+      ],
+      "output_limit_cases": [],
+      "per_case": [
+        {
+          "case": "arithmetic",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.2005605590020423,
+          "baseline_decode_seconds": 1.107467098001507,
+          "tokens_per_second": 2.498832714022964,
+          "prefill_seconds": 3.3834491039997374,
+          "proposed": 3,
+          "accepted": 3,
+          "quality": {
+            "passed": true,
+            "expected": "1083"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "grounding",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.2178695619986684,
+          "baseline_decode_seconds": 1.1717717424999137,
+          "tokens_per_second": 2.4633179887316046,
+          "prefill_seconds": 4.971447897001781,
+          "proposed": 3,
+          "accepted": 3,
+          "quality": {
+            "passed": true,
+            "expected": "Non specificato."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "json",
+          "committed_decode_tokens": 37,
+          "decode_seconds": 8.258397208999668,
+          "baseline_decode_seconds": 10.21526665050078,
+          "tokens_per_second": 4.4802882525048435,
+          "prefill_seconds": 4.922801712000364,
+          "proposed": 26,
+          "accepted": 25,
+          "quality": {
+            "passed": false,
+            "expected": {
+              "nome": "Marta Rossi",
+              "città": "Bologna",
+              "biciclette": 3
+            },
+            "reason": "not standalone JSON"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "python",
+          "committed_decode_tokens": 52,
+          "decode_seconds": 10.436115266998968,
+          "baseline_decode_seconds": 13.815752447000705,
+          "tokens_per_second": 4.982696977718724,
+          "prefill_seconds": 4.644545093000488,
+          "proposed": 36,
+          "accepted": 36,
+          "quality": {
+            "passed": null,
+            "review": "Verificare sintassi e comportamento su lista vuota, ripetizioni e numeri negativi."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "italian",
+          "committed_decode_tokens": 164,
+          "decode_seconds": 39.98090554800001,
+          "baseline_decode_seconds": 38.51099106899892,
+          "tokens_per_second": 4.101958116058826,
+          "prefill_seconds": 4.918277437998768,
+          "proposed": 142,
+          "accepted": 94,
+          "quality": {
+            "passed": null,
+            "review": "Verificare italiano, correttezza, concisione e soluzione praticabile."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "reasoning",
+          "committed_decode_tokens": 1,
+          "decode_seconds": 0.8719654950000404,
+          "baseline_decode_seconds": 0.7118875875003141,
+          "tokens_per_second": 1.1468343710090887,
+          "prefill_seconds": 3.986725123002543,
+          "proposed": 2,
+          "accepted": 2,
+          "quality": {
+            "passed": true,
+            "expected": "15"
+          },
+          "at_output_limit": false
+        }
+      ]
+    },
+    {
+      "depth": 3,
+      "adaptive": false,
+      "cases": 6,
+      "committed_decode_tokens": 260,
+      "decode_seconds": 70.44110162600555,
+      "committed_tokens_per_second": 3.691026886269093,
+      "speedup_vs_causal": 0.9303252658148169,
+      "acceptance": 0.6544117647058824,
+      "quality_failures": [
+        "json"
+      ],
+      "output_limit_cases": [],
+      "per_case": [
+        {
+          "case": "arithmetic",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 0.8596576110030583,
+          "baseline_decode_seconds": 1.107467098001507,
+          "tokens_per_second": 3.4897614603790523,
+          "prefill_seconds": 3.3733685339975636,
+          "proposed": 3,
+          "accepted": 3,
+          "quality": {
+            "passed": true,
+            "expected": "1083"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "grounding",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.6619849580019945,
+          "baseline_decode_seconds": 1.1717717424999137,
+          "tokens_per_second": 1.8050704884877784,
+          "prefill_seconds": 5.000441559001047,
+          "proposed": 4,
+          "accepted": 3,
+          "quality": {
+            "passed": true,
+            "expected": "Non specificato."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "json",
+          "committed_decode_tokens": 37,
+          "decode_seconds": 8.391805462000775,
+          "baseline_decode_seconds": 10.21526665050078,
+          "tokens_per_second": 4.40906312325053,
+          "prefill_seconds": 5.03786103099992,
+          "proposed": 31,
+          "accepted": 28,
+          "quality": {
+            "passed": false,
+            "expected": {
+              "nome": "Marta Rossi",
+              "città": "Bologna",
+              "biciclette": 3
+            },
+            "reason": "not standalone JSON"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "python",
+          "committed_decode_tokens": 52,
+          "decode_seconds": 9.878027170998394,
+          "baseline_decode_seconds": 13.815752447000705,
+          "tokens_per_second": 5.264209046991743,
+          "prefill_seconds": 4.654568580997875,
+          "proposed": 40,
+          "accepted": 40,
+          "quality": {
+            "passed": null,
+            "review": "Verificare sintassi e comportamento su lista vuota, ripetizioni e numeri negativi."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "italian",
+          "committed_decode_tokens": 164,
+          "decode_seconds": 48.76373224300187,
+          "baseline_decode_seconds": 38.51099106899892,
+          "tokens_per_second": 3.363155206880946,
+          "prefill_seconds": 4.975427643999865,
+          "proposed": 192,
+          "accepted": 102,
+          "quality": {
+            "passed": null,
+            "review": "Verificare italiano, correttezza, concisione e soluzione praticabile."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "reasoning",
+          "committed_decode_tokens": 1,
+          "decode_seconds": 0.8858941809994576,
+          "baseline_decode_seconds": 0.7118875875003141,
+          "tokens_per_second": 1.1288029896209604,
+          "prefill_seconds": 4.034013610998954,
+          "proposed": 2,
+          "accepted": 2,
+          "quality": {
+            "passed": true,
+            "expected": "15"
+          },
+          "at_output_limit": false
+        }
+      ]
+    },
+    {
+      "depth": 4,
+      "adaptive": false,
+      "cases": 6,
+      "committed_decode_tokens": 260,
+      "decode_seconds": 85.72975099700125,
+      "committed_tokens_per_second": 3.0327861328921224,
+      "speedup_vs_causal": 0.7644153381105053,
+      "acceptance": 0.5552238805970149,
+      "quality_failures": [
+        "json"
+      ],
+      "output_limit_cases": [],
+      "per_case": [
+        {
+          "case": "arithmetic",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.093459283001721,
+          "baseline_decode_seconds": 1.107467098001507,
+          "tokens_per_second": 2.7435863837238816,
+          "prefill_seconds": 3.3712674179987516,
+          "proposed": 4,
+          "accepted": 4,
+          "quality": {
+            "passed": true,
+            "expected": "1083"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "grounding",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.6310916660004295,
+          "baseline_decode_seconds": 1.1717717424999137,
+          "tokens_per_second": 1.8392589837432287,
+          "prefill_seconds": 4.948748049999267,
+          "proposed": 4,
+          "accepted": 3,
+          "quality": {
+            "passed": true,
+            "expected": "Non specificato."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "json",
+          "committed_decode_tokens": 37,
+          "decode_seconds": 8.440083311001217,
+          "baseline_decode_seconds": 10.21526665050078,
+          "tokens_per_second": 4.383842983134111,
+          "prefill_seconds": 4.9621512519988755,
+          "proposed": 32,
+          "accepted": 31,
+          "quality": {
+            "passed": false,
+            "expected": {
+              "nome": "Marta Rossi",
+              "città": "Bologna",
+              "biciclette": 3
+            },
+            "reason": "not standalone JSON"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "python",
+          "committed_decode_tokens": 52,
+          "decode_seconds": 9.726171504997183,
+          "baseline_decode_seconds": 13.815752447000705,
+          "tokens_per_second": 5.346399657180943,
+          "prefill_seconds": 4.677207794000424,
+          "proposed": 43,
+          "accepted": 43,
+          "quality": {
+            "passed": null,
+            "review": "Verificare sintassi e comportamento su lista vuota, ripetizioni e numeri negativi."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "italian",
+          "committed_decode_tokens": 164,
+          "decode_seconds": 63.965165629000694,
+          "baseline_decode_seconds": 38.51099106899892,
+          "tokens_per_second": 2.5638954951075004,
+          "prefill_seconds": 4.875299815001199,
+          "proposed": 250,
+          "accepted": 103,
+          "quality": {
+            "passed": null,
+            "review": "Verificare italiano, correttezza, concisione e soluzione praticabile."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "reasoning",
+          "committed_decode_tokens": 1,
+          "decode_seconds": 0.8737796030000027,
+          "baseline_decode_seconds": 0.7118875875003141,
+          "tokens_per_second": 1.1444533570784177,
+          "prefill_seconds": 4.0058168309988105,
+          "proposed": 2,
+          "accepted": 2,
+          "quality": {
+            "passed": true,
+            "expected": "15"
+          },
+          "at_output_limit": false
+        }
+      ]
+    },
+    {
+      "depth": 4,
+      "adaptive": true,
+      "cases": 6,
+      "committed_decode_tokens": 260,
+      "decode_seconds": 60.72173965000184,
+      "committed_tokens_per_second": 4.281827258221383,
+      "speedup_vs_causal": 1.079236809950325,
+      "acceptance": 0.7922705314009661,
+      "quality_failures": [
+        "json"
+      ],
+      "output_limit_cases": [],
+      "per_case": [
+        {
+          "case": "arithmetic",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.1836390440003015,
+          "baseline_decode_seconds": 1.107467098001507,
+          "tokens_per_second": 2.5345564724369094,
+          "prefill_seconds": 3.4096215419995133,
+          "proposed": 3,
+          "accepted": 3,
+          "quality": {
+            "passed": true,
+            "expected": "1083"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "grounding",
+          "committed_decode_tokens": 3,
+          "decode_seconds": 1.233527562002564,
+          "baseline_decode_seconds": 1.1717717424999137,
+          "tokens_per_second": 2.4320494267105515,
+          "prefill_seconds": 5.002941183000075,
+          "proposed": 3,
+          "accepted": 3,
+          "quality": {
+            "passed": true,
+            "expected": "Non specificato."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "json",
+          "committed_decode_tokens": 37,
+          "decode_seconds": 7.774903367000661,
+          "baseline_decode_seconds": 10.21526665050078,
+          "tokens_per_second": 4.758901590602477,
+          "prefill_seconds": 4.946655259998806,
+          "proposed": 30,
+          "accepted": 30,
+          "quality": {
+            "passed": false,
+            "expected": {
+              "nome": "Marta Rossi",
+              "città": "Bologna",
+              "biciclette": 3
+            },
+            "reason": "not standalone JSON"
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "python",
+          "committed_decode_tokens": 52,
+          "decode_seconds": 9.767980370001169,
+          "baseline_decode_seconds": 13.815752447000705,
+          "tokens_per_second": 5.323516021766307,
+          "prefill_seconds": 4.6741295809988515,
+          "proposed": 42,
+          "accepted": 42,
+          "quality": {
+            "passed": null,
+            "review": "Verificare sintassi e comportamento su lista vuota, ripetizioni e numeri negativi."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "italian",
+          "committed_decode_tokens": 164,
+          "decode_seconds": 39.880438156997116,
+          "baseline_decode_seconds": 38.51099106899892,
+          "tokens_per_second": 4.112291829753275,
+          "prefill_seconds": 4.950352575000579,
+          "proposed": 127,
+          "accepted": 84,
+          "quality": {
+            "passed": null,
+            "review": "Verificare italiano, correttezza, concisione e soluzione praticabile."
+          },
+          "at_output_limit": false
+        },
+        {
+          "case": "reasoning",
+          "committed_decode_tokens": 1,
+          "decode_seconds": 0.8812511500000255,
+          "baseline_decode_seconds": 0.7118875875003141,
+          "tokens_per_second": 1.1347502922407204,
+          "prefill_seconds": 4.02207012800136,
+          "proposed": 2,
+          "accepted": 2,
+          "quality": {
+            "passed": true,
+            "expected": "15"
+          },
+          "at_output_limit": false
+        }
+      ]
+    }
+  ]
+}
