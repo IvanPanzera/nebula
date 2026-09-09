@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light"><meta name="theme-color" content="#f8f7fc">
+  <title>Qwen · Il tuo spazio</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+ <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+ <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+ <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2v-10a9 9 0 0 1 18 0Z"/><path d="M7 10h8M7 14h5"/></symbol>
+ <symbol id="i-code" viewBox="0 0 24 24"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18"/></symbol>
+ <symbol id="i-pen" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 15l-1 6Z"/></symbol>
+ <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7Zm0 0v6h5M8 12h8M8 16h6"/></symbol>
+ <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 2.8 6.2L21 12l-6.2 2.8L12 21l-2.8-6.2L3 12l6.2-2.8ZM20 2v4m-2-2h4"/></symbol>
+ <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
+ <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+ <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h10m4 0h2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></symbol>
+ <symbol id="i-clip" viewBox="0 0 24 24"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2m-8 13 8-8"/></symbol>
+ <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+ <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+ <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+ <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+ <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></symbol>
+</svg>
+<button class="scrim" id="scrim" aria-label="Chiudi menu" hidden></button>
+<aside class="sidebar" id="sidebar">
+ <a class="brand" href="/" aria-label="Qwen, pagina iniziale"><img class="brand-logo" src="/qwen-logo.png" alt="Qwen3" width="712" height="280"><span class="brand-caption">IL TUO SPAZIO</span></a>
+ <button class="new-chat" id="new-chat"><svg><use href="#i-plus"/></svg>Nuova chat<span class="shortcut">↗</span></button>
+ <div class="history-heading">CONVERSAZIONI <span id="chat-count">0</span></div>
+ <nav id="history" class="history" aria-label="Conversazioni salvate"></nav>
+ <div class="sidebar-bottom">
+  <div class="local-card"><span class="local-symbol"><svg><use href="#i-lock"/></svg></span><div><strong>Il tuo computer. Le tue idee.</strong><p>Chat salvate in questo browser.<br>Nessun servizio cloud.</p></div></div>
+  <div class="profile"><span class="avatar">I</span><div><strong>Spazio personale</strong><span id="profile-model">Qwen Flash-Next</span></div><span class="profile-dot"></span></div>
+ </div>
+</aside>
+<main class="main">
+ <header class="topbar">
+  <div class="model-heading"><button id="menu" class="icon-button mobile-menu" aria-label="Apri menu"><svg><use href="#i-menu"/></svg></button><img class="model-logo" src="/qwen-logo.png" alt="Qwen3" width="712" height="280"><label class="sr-only" for="model-select">Modello</label><select id="model-select" class="model-select" aria-label="Modello"><option value="flash-next">Flash-Next · speculativo</option></select><span class="local-badge">LOCALE</span></div>
+  <div class="top-actions"><span class="status" id="status"><i></i><span>Connessione…</span></span><button id="export" class="icon-button" aria-label="Esporta conversazione" title="Esporta conversazione"><svg><use href="#i-download"/></svg></button><button id="settings-toggle" class="icon-button" aria-label="Impostazioni" aria-expanded="false"><svg><use href="#i-sliders"/></svg></button></div>
+ </header>
+ <section class="settings" id="settings" hidden aria-label="Impostazioni della risposta">
+  <div><strong>Quanto spazio alla risposta?</strong><p>Limite massimo, entro il contesto disponibile. Qwen può terminare prima.</p></div><label for="max-tokens">Lunghezza</label><select id="max-tokens"><option value="256">Essenziale · 256 token</option><option value="512">Breve · 512 token</option><option value="1024">Media · 1.024 token</option><option value="2048" selected>Standard · 2.048 token</option></select>
+  <div class="setting-note"><svg><use href="#i-spark"/></svg><span id="model-note">MTP adattivo 4–16 · contesto totale 24.576 token.</span> Con Thinking acceso, il limite include anche il ragionamento nascosto.</div>
+ </section>
+ <div class="notice" id="notice" role="status" hidden></div>
+ <div class="scroll-area" id="scroll-area">
+  <section class="welcome" id="welcome">
+   <div class="hero-symbol"><svg><use href="#i-spark"/></svg><span></span></div>
+   <p class="eyebrow">UNO SPAZIO PER PENSARE, INSIEME</p>
+   <h1>Da dove <span>cominciamo?</span></h1>
+   <p class="intro">Dai forma a un’idea, trova le parole giuste<br>o affronta un problema. Qwen è qui, sul tuo computer.</p>
+   <div class="suggestions">
+    <button data-prompt="Aiutami a scrivere un’email professionale. Ti descrivo destinatario e obiettivo: "><span class="suggestion-icon peach"><svg><use href="#i-pen"/></svg></span><strong>Trova le parole giuste</strong><span>Un’email, un testo, una nuova idea</span><b>↗</b></button>
+    <button data-prompt="Scrivi una funzione Python che rimuova i duplicati da una lista mantenendo l’ordine. Spiegami come funziona."><span class="suggestion-icon lavender"><svg><use href="#i-code"/></svg></span><strong>Costruisci con il codice</strong><span>Dalla prima funzione a un problema</span><b>↗</b></button>
+    <button data-prompt="Riassumi questo testo in punti chiari, mettendo in evidenza le informazioni principali:\n\n"><span class="suggestion-icon mint"><svg><use href="#i-file"/></svg></span><strong>Metti a fuoco l’essenziale</strong><span>Riassumi e comprendi un documento</span><b>↗</b></button>
+    <button data-prompt="Aiutami a ragionare su questa idea: "><span class="suggestion-icon butter"><svg><use href="#i-spark"/></svg></span><strong>Esplora una possibilità</strong><span>Ragioniamo insieme, un passo alla volta</span><b>↗</b></button>
+   </div>
+  </section>
+  <section class="messages" id="messages" aria-label="Messaggi della conversazione" aria-live="polite" aria-relevant="additions"></section>
+ </div>
+ <div class="composer-area">
+  <section class="document-panel" id="document-panel" hidden aria-label="Conversione documento">
+   <div class="document-heading"><strong id="document-name"></strong><button type="button" id="document-close" class="icon-button" aria-label="Chiudi documento"><svg><use href="#i-close"/></svg></button></div>
+   <div class="document-options"><label>Pagine <input id="document-pages" placeholder="Tutte · es. 1-5,8" maxlength="200"></label><label class="document-check"><input type="checkbox" id="document-force"> OCR anche sul testo selezionabile</label><button type="button" id="document-convert">Converti in Markdown</button></div>
+   <p class="document-hint">PDF e immagini fino a 25 MiB · massimo 50 pagine per conversione.</p>
+  </section>
+  <section class="document-result" id="document-result" hidden aria-label="Documento convertito">
+   <div class="document-heading"><strong id="document-summary"></strong><div><a id="document-md" download>Markdown</a><a id="document-zip" download>Con immagini · ZIP</a></div></div>
+   <details><summary>Anteprima del testo da allegare</summary><pre id="document-preview"></pre></details>
+  </section>
+  <div class="activity" id="activity" hidden><span class="activity-dot"></span><span id="activity-text"></span><span id="activity-time"></span></div>
+  <form class="composer" id="composer">
+   <div class="attachment" id="attachment" hidden><svg><use href="#i-file"/></svg><span id="attachment-name"></span><button type="button" id="remove-attachment" aria-label="Rimuovi allegato"><svg><use href="#i-close"/></svg></button></div>
+   <label for="prompt" class="sr-only">Scrivi a Qwen</label><textarea id="prompt" rows="1" placeholder="Scrivi a Qwen. Le idee iniziano da qui…" maxlength="300000"></textarea>
+   <div class="composer-toolbar"><div class="composer-tools"><button type="button" id="attach" class="icon-button" aria-label="Allega documento" title="Allega PDF, immagini, testo, Markdown o codice"><svg><use href="#i-clip"/></svg></button><button type="button" id="thinking-toggle" class="thinking-toggle" role="switch" aria-checked="false" aria-label="Thinking" title="Ragionamento breve prima della risposta. Rimane nascosto, ma usa tempo e token."><svg><use href="#i-spark"/></svg><span>Thinking</span><span class="thinking-state">Off</span><span class="switch-track" aria-hidden="true"></span></button><span class="input-hint">Invio per inviare <span>· Maiusc + Invio per andare a capo</span></span></div><button type="submit" class="send" id="send" aria-label="Invia messaggio" disabled><svg><use href="#i-arrow"/></svg></button><button type="button" class="stop" id="stop" aria-label="Interrompi risposta" hidden><span></span></button></div>
+  </form>
+  <div class="composer-footer"><span><svg><use href="#i-lock"/></svg>Elaborato sul tuo computer</span><span id="context-label">24K di contesto <span class="footer-dot">·</span> Verifica le risposte importanti</span></div>
+ </div>
+</main>
+<input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.py,.js,.ts,.c,.h,.html,.css,.log" hidden>
+<div class="toast" id="toast" role="status" hidden></div>
+</body></html>
