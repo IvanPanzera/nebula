@@ -1,0 +1,22 @@
+# Generated model assets, environments, logs and local documents
+/models/
+/model/
+/work/
+/runtime/
+/qwen/build/
+__pycache__/
+*.py[cod]
+*.o
+*.so
+*.dll
+*.dylib
+*.exe
+*.gguf
+*.safetensors
+*.partial
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
