@@ -2,6 +2,8 @@
   <img src="logo.svg" alt="Nebula" width="320">
 </p>
 
+The Promethean fire must reach as many apes as possible; three small monoliths may be better than a single large one. The spread-out flame is less intense in color.
+
 # Nebula
 
 ### Large-model inference on a 12 GB consumer GPU.
