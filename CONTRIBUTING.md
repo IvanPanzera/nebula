@@ -1,4 +1,4 @@
-# Contributing to City of Brass
+# Contributing to Nebula
 
 Contributions that improve correctness, reduce memory traffic or make results easier to reproduce are welcome. The initial target is one text sequence on a 12 GB NVIDIA GPU with host-memory expert offload.
 

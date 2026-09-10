@@ -1,4 +1,8 @@
-# City of Brass
+<p align="center">
+  <img src="logo.svg" alt="Nebula" width="320">
+</p>
+
+# Nebula
 
 ### Large-model inference on a 12 GB consumer GPU.
 
@@ -6,7 +10,7 @@
 
 [Italiano](README.it.md) · [Setup](qwen/README.md) · [Benchmarks](docs/BENCHMARKS.md) · [Contributing](CONTRIBUTING.md)
 
-City of Brass explores how far a single consumer GPU can go with a large language model. It runs **Qwen3.8-Flash-Next** locally by combining a dedicated C/CUDA engine, native multi-token prediction (MTP), a GPU expert cache and weights held in system memory.
+Nebula explores how far a single consumer GPU can go with a large language model. It runs **Qwen3.8-Flash-Next** locally by combining a dedicated C/CUDA engine, native multi-token prediction (MTP), a GPU expert cache and weights held in system memory.
 
 The motivation is simple: make capable, large open-weight models useful on a personal computer, and share the engineering and measurements needed to reproduce the result.
 
