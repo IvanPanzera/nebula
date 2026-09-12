@@ -1,23 +1,23 @@
 ---
-name: Hardware / benchmark result
-about: Share a reproducible run on your machine
-title: "[Benchmark] "
+name: Benchmark result
+about: Share a reproducible speed or quality measurement
+title: ""
 labels: ""
 assignees: ""
 ---
 
-## Hardware and software
-
-GPU / VRAM, system RAM, storage, OS/WSL, CUDA, driver and source revision:
-
 ## Configuration
 
-Model revisions, quantization, context capacity, actual prompt length, prefill chunk, expert cache, draft policy, thinking mode and response limit:
+Commit, hardware, driver/toolkit, quantization, GPU/RAM expert counts, n-gram placement, CPU workers, context, prefill, verification level and thinking setting.
 
-## Commands and results
+## Workload
 
-Exact commands, shareable prompts, committed tokens, loading/prefill/decode times, draft acceptance, expert transfers and memory measurements:
+Dataset or exact prompts, selection method, repetitions, response cap and concurrency.
 
-## Correctness and comparison
+## Results
 
-Causal baseline, response checks, failed or truncated cases, and whether the result was repeated:
+Input/output token counts, prefill time, generation time, time to first token, draft acceptance and expert handoffs. Include all failed or capped responses.
+
+## Comparison
+
+Describe the baseline and the settings held constant. Attach machine-readable observations where possible.

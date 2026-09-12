@@ -1,23 +1,27 @@
 ---
 name: Bug report
-about: Report a reproducible engine or interface problem
-title: "[Bug] "
+about: Report a reproducible problem in Nebula
+title: ""
 labels: ""
 assignees: ""
 ---
 
-## What happened
+## Problem
 
-Expected behavior and observed behavior:
+What happened, and what did you expect?
 
-## Reproduce
+## Reproduction
 
-Commands and a minimal shareable prompt:
+Include the smallest steps or prompt needed to reproduce the behavior.
 
 ## Environment
 
-Source revision, model/quantization, GPU, RAM, OS/WSL, CUDA, context, draft policy:
+- Commit or installer SHA256:
+- Windows and WSL versions:
+- CPU and RAM:
+- NVIDIA GPU, VRAM and driver:
+- Hardware profile, verification level and thinking setting:
 
-## Evidence
+## Logs
 
-Error output and relevant measurements. Remove private prompts, local account details and credentials before attaching files.
+Attach the relevant error and timing information, removing personal document content and credentials.
