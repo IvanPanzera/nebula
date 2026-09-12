@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "source_docx_sha256": "2eabb98672e8044f0676226166d6a0093d67fb0c3c4ec61a7639eed2d4b25bae",
+  "profiles": [
+    {
+      "vram_gib": 8,
+      "gpu_experts": 11,
+      "prefill": 1024,
+      "context": 8192,
+      "ram_gib": 32,
+      "ram_experts": 152,
+      "ssd_experts": 360,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 8,
+      "gpu_experts": 11,
+      "prefill": 1024,
+      "context": 8192,
+      "ram_gib": 64,
+      "ram_experts": 411,
+      "ssd_experts": 101,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 8,
+      "gpu_experts": 11,
+      "prefill": 1024,
+      "context": 8192,
+      "ram_gib": 96,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ssd",
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 8,
+      "gpu_experts": 11,
+      "prefill": 1024,
+      "context": 8192,
+      "ram_gib": 128,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ram",
+      "windows_reserve_gib": 16
+    },
+    {
+      "vram_gib": 12,
+      "gpu_experts": 27,
+      "prefill": 2048,
+      "context": 24576,
+      "ram_gib": 32,
+      "ram_experts": 151,
+      "ssd_experts": 361,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 12,
+      "gpu_experts": 27,
+      "prefill": 2048,
+      "context": 24576,
+      "ram_gib": 64,
+      "ram_experts": 410,
+      "ssd_experts": 102,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 12,
+      "gpu_experts": 27,
+      "prefill": 2048,
+      "context": 24576,
+      "ram_gib": 96,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ssd",
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 12,
+      "gpu_experts": 27,
+      "prefill": 2048,
+      "context": 24576,
+      "ram_gib": 128,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ram",
+      "windows_reserve_gib": 16
+    },
+    {
+      "vram_gib": 16,
+      "gpu_experts": 34,
+      "prefill": 4096,
+      "context": 49152,
+      "ram_gib": 32,
+      "ram_experts": 148,
+      "ssd_experts": 364,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 16,
+      "gpu_experts": 34,
+      "prefill": 4096,
+      "context": 49152,
+      "ram_gib": 64,
+      "ram_experts": 406,
+      "ssd_experts": 106,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 16,
+      "gpu_experts": 34,
+      "prefill": 4096,
+      "context": 49152,
+      "ram_gib": 96,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ssd",
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 16,
+      "gpu_experts": 34,
+      "prefill": 4096,
+      "context": 49152,
+      "ram_gib": 128,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ram",
+      "windows_reserve_gib": 16
+    },
+    {
+      "vram_gib": 24,
+      "gpu_experts": 54,
+      "prefill": 8182,
+      "context": 98304,
+      "ram_gib": 32,
+      "ram_experts": 144,
+      "ssd_experts": 368,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 24,
+      "gpu_experts": 54,
+      "prefill": 8182,
+      "context": 98304,
+      "ram_gib": 64,
+      "ram_experts": 402,
+      "ssd_experts": 110,
+      "ngram": "ssd",
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 24,
+      "gpu_experts": 54,
+      "prefill": 8182,
+      "context": 98304,
+      "ram_gib": 96,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ssd",
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 24,
+      "gpu_experts": 54,
+      "prefill": 8182,
+      "context": 98304,
+      "ram_gib": 128,
+      "ram_experts": 512,
+      "ssd_experts": 0,
+      "ngram": "ram",
+      "windows_reserve_gib": 16
+    }
+  ]
+}
