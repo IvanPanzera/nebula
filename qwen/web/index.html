@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <meta name="color-scheme" content="light"><meta name="theme-color" content="#ffffff">
+ <title>Nebula</title><link rel="icon" href="/nebula-logo.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<svg class="sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+ <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+ <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+ <symbol id="i-pen" viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 15l-1 6Z"/></symbol>
+ <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7Zm0 0v6h5M8 12h8M8 16h6"/></symbol>
+ <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
+ <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+ <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h9m4 0h3M4 12h3m4 0h9M4 18h10m4 0h2"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></symbol>
+ <symbol id="i-clip" viewBox="0 0 24 24"><path d="m8 13 7-7a3 3 0 0 1 4 4L9 20a5 5 0 0 1-7-7L13 2m-8 13 8-8"/></symbol>
+ <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+ <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+ <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+ <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+</svg>
+<button class="scrim" id="scrim" aria-label="Close sidebar" hidden></button>
+<aside class="sidebar" id="sidebar">
+ <a class="brand" href="/" aria-label="Nebula home"><img src="/nebula-logo.svg" alt="Nebula" width="128" height="100"></a>
+ <button class="new-chat" id="new-chat"><svg><use href="#i-plus"/></svg>New chat</button>
+ <div class="history-heading">Chats <span id="chat-count">0</span></div>
+ <nav id="history" class="history" aria-label="Saved chats"></nav>
+</aside>
+<main class="main">
+ <header class="topbar">
+  <button id="menu" class="icon-button mobile-menu" aria-label="Open sidebar" aria-expanded="false" aria-controls="sidebar"><svg><use href="#i-menu"/></svg></button>
+  <span id="chat-title" class="chat-title">New chat</span>
+  <span class="status" id="status" role="status">Connecting</span>
+  <div class="top-actions">
+   <button id="statistics-toggle" class="toggle" role="switch" aria-checked="false"><span>Statistics</span><span class="switch-track" aria-hidden="true"></span></button>
+   <button id="export" class="icon-button" aria-label="Export chat" title="Export chat"><svg><use href="#i-download"/></svg></button>
+   <button id="settings-toggle" class="icon-button" aria-label="Generation settings" title="Generation settings" aria-expanded="false" aria-controls="settings"><svg><use href="#i-sliders"/></svg></button>
+  </div>
+ </header>
+ <section class="settings" id="settings" hidden aria-label="Generation settings">
+  <h2>Generation</h2>
+  <label for="max-tokens">Response limit</label><select id="max-tokens"><option value="256">256 tokens</option><option value="512">512 tokens</option><option value="1024">1,024 tokens</option><option value="2048" selected>2,048 tokens</option></select>
+  <div class="verification-control" id="verification-control"><label for="verification-level">Draft verification</label><select id="verification-level" aria-describedby="verification-note" disabled><option value="3">3 · Strict</option><option value="2">2 · Limited tolerance</option><option value="1">1 · Wide tolerance</option></select><p id="verification-note">Draft tokens must match the target’s first choice.</p></div>
+ </section>
+ <div class="notice" id="notice" role="status" hidden></div>
+ <div class="scroll-area" id="scroll-area">
+  <section class="welcome" id="welcome"><h1>New chat</h1></section>
+  <section class="messages" id="messages" aria-label="Conversation" aria-live="polite" aria-relevant="additions"></section>
+ </div>
+ <div class="composer-area">
+  <section class="document-panel" id="document-panel" hidden aria-label="Convert document">
+   <div class="document-heading"><strong id="document-name"></strong><button type="button" id="document-close" class="icon-button" aria-label="Close document"><svg><use href="#i-close"/></svg></button></div>
+   <div class="document-options"><label>Pages <input id="document-pages" placeholder="All · e.g. 1-5,8" maxlength="200"></label><label><input type="checkbox" id="document-force"> Force OCR</label><button type="button" id="document-convert">Convert to Markdown</button></div>
+   <p class="document-hint">PDF or image · up to 25 MiB and 50 pages</p>
+  </section>
+  <section class="document-result" id="document-result" hidden aria-label="Converted document">
+   <div class="document-heading"><strong id="document-summary"></strong><div><a id="document-md" download>Markdown</a><a id="document-zip" download>ZIP with images</a></div></div>
+   <details><summary>Preview attachment</summary><pre id="document-preview"></pre></details>
+  </section>
+  <div class="activity" id="activity" hidden><span class="activity-dot"></span><span id="activity-text"></span><span id="activity-time"></span></div>
+  <form class="composer" id="composer">
+   <div class="attachment" id="attachment" hidden><svg><use href="#i-file"/></svg><span id="attachment-name"></span><button type="button" id="remove-attachment" class="icon-button" aria-label="Remove attachment"><svg><use href="#i-close"/></svg></button></div>
+   <label for="prompt" class="sr-only">Message Nebula</label><textarea id="prompt" rows="2" placeholder="Message Nebula…" maxlength="300000"></textarea>
+   <div class="composer-toolbar"><div class="composer-tools"><button type="button" id="attach" class="icon-button" aria-label="Attach document" title="Attach document"><svg><use href="#i-clip"/></svg></button><button type="button" id="thinking-toggle" class="toggle" role="switch" aria-checked="false" aria-label="Thinking" title="Use hidden reasoning before the answer. It counts toward the response limit."><span>Thinking</span><span class="thinking-state">Off</span><span class="switch-track" aria-hidden="true"></span></button></div><button type="submit" class="send" id="send" aria-label="Send message" disabled><svg><use href="#i-arrow"/></svg></button><button type="button" class="stop" id="stop" aria-label="Stop response" hidden><span></span></button></div>
+  </form>
+  <div class="composer-footer" id="context-label" data-statistics hidden></div>
+ </div>
+</main>
+<dialog id="chat-dialog"><form id="chat-dialog-form"><h2 id="chat-dialog-title">Rename chat</h2><p id="chat-dialog-description"></p><div id="chat-name-field"><label for="chat-name">Chat name</label><input id="chat-name" maxlength="80" required autocomplete="off"></div><div class="dialog-actions"><button type="button" id="chat-dialog-cancel">Cancel</button><button type="submit" id="chat-dialog-submit" class="primary">Save</button></div></form></dialog>
+<input id="file" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.csv,.json,.py,.js,.ts,.c,.h,.html,.css,.log" hidden>
+<div class="toast" id="toast" role="status" hidden></div>
+</body></html>
