@@ -1,9 +1,18 @@
 * text=auto
-*.sh text eol=lf
 *.py text eol=lf
 *.c text eol=lf
-*.cu text eol=lf
 *.h text eol=lf
-Makefile text eol=lf
+*.cu text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.ps1 text eol=crlf
 *.bat text eol=crlf
-*.png binary
+*.svg text eol=lf
+assets/tokenizer/* -text linguist-vendored
+qwen/expert_ranking.json linguist-generated
+qwen/hotlist.json linguist-generated
+installer/model_recipe.json linguist-generated
+installer/budgets.json linguist-generated
+docs/evidence/* linguist-generated
