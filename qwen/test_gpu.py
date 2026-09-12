@@ -26,6 +26,7 @@ SIGNATURES = {
     "kv_store": ([P,P,I,I,I], I), "attention": ([P,P,P,P,P,I,I,I], I),
     "index": ([P,P,P,P,P,P,P,I,I,I,F,F], I),
     "route": ([P,P,P,I], I), "ple_gate": ([P,P,P,P,I], I),
+    "prune_routes": ([P,P,P,I,C.c_double,P], I),
     "argmax": ([P,P,I,I], I),
     "moe_map": ([P,P,I], I), "moe_gather": ([P,P,P,I], I), "moe_scatter": ([P,P,P,P,P,I,I], I), "moe_reduce": ([P,P,I], I),
     "mtp_moe": ([P,P,P,P,P,P,I,P,I,P,I,I], I),
@@ -80,6 +81,19 @@ def rope(x, positions, theta=1e7):
 
 
 class KernelTests(unittest.TestCase):
+    def test_current_mass_pruning_and_strict_threshold(self):
+        class Counters(C.Structure):
+            _fields_=[(k,C.c_uint64) for k in ('token_layers','missing','skipped','avoided')]+[('mass',C.c_double)]
+        ids=np.tile(np.arange(10,dtype=np.int32),(5,1));weights=np.full((5,10),.1,np.float32)
+        resident=np.zeros(512,np.uint8);resident[:8]=1
+        weights[0,8:]=.04;weights[1,8:]=.05;weights[2,8:]=.06;weights[3,8:]=0;weights[4,8:]=[.01,.10]
+        di,dw,dr,dc=Device(ids),Device(weights),Device(resident),Device(np.zeros(C.sizeof(Counters),np.uint8))
+        call('prune_routes',di.p,dw.p,dr.p,5,.10,dc.p)
+        actual=di.get();self.assertTrue(np.all(actual[[0,3],8:]<=-2))
+        np.testing.assert_array_equal(actual[[1,2,4]],ids[[1,2,4]])
+        np.testing.assert_array_equal(dw.get()[:,:8],weights[:,:8])
+        counts=Counters.from_buffer_copy(dc.get());self.assertEqual((counts.token_layers,counts.missing,counts.skipped,counts.avoided),(5,10,4,2))
+
     @classmethod
     def setUpClass(cls):
         call('prepare_context',24576)

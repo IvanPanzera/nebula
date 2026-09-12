@@ -38,7 +38,7 @@ class DocumentTests(unittest.TestCase):
             code = "import json, sys\nprint(json.dumps(dict(type='phase',phase='document')),flush=True)\n"
             if needs_gpu:
                 code += "print(json.dumps(dict(type='needs_ocr')),flush=True)\nassert sys.stdin.readline().strip()=='go'\n"
-            code += "print(json.dumps(dict(type='document_done',text='Testo')),flush=True)\n"
+            code += "print(json.dumps(dict(type='document_done',text='Text')),flush=True)\n"
             (root/'qwen/document_worker.py').write_text(code)
             engine = Engine(command=['unused'])
             engine.loaded = True

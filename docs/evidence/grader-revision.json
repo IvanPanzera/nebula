@@ -1,0 +1,12 @@
+{
+  "repository": "LiveBench/LiveBench",
+  "commit": "1c779c2472fdc6823617bda940f105d03f311908",
+  "commit_date": "2024-11-08T19:05:41Z",
+  "archive": {
+    "url": "https://codeload.github.com/LiveBench/LiveBench/zip/1c779c2472fdc6823617bda940f105d03f311908",
+    "sha256": "5cc0ebbbd89358639af7a07a31fec6353ddfda9c885374a99c7961203a8bb39a",
+    "bytes": 6449871,
+    "path": "upstream/livebench-release.zip"
+  },
+  "reason": "Release-matched offline evaluator; avoids later external LLM fallback. Selected before any quality answers."
+}

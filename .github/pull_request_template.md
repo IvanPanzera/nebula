@@ -1,11 +1,11 @@
 ## Change
 
-Describe the concrete problem and resulting behavior.
+Describe the problem and the resulting behavior.
 
 ## Validation
 
-List relevant checks and their outcomes. For numerical or inference changes, include the causal/reference comparison and before/after measurements.
+List the commands run and their results. For native changes, include CPU, GPU, RAM, driver/toolkit and hardware profile.
 
-## Limits
+## Model behavior
 
-State any untested hardware, context lengths or model paths affected by the change.
+State any changes to quantization, routing, verification, cache/state handling or measured throughput.

@@ -5,6 +5,13 @@
 
 const char *qg_error(int code){(void)code;return "test GPU stub";}
 int qg_read(void *dst,const void *src,size_t bytes){memcpy(dst,src,bytes);return 0;}
+int qg_write(void *dst,const void *src,size_t bytes){memcpy(dst,src,bytes);return 0;}
+int qg_prune_routes(int *ids,float *weights,const unsigned char *resident,int nt,double threshold,qg_prune_stats *stats){
+    (void)ids;(void)weights;(void)resident;(void)nt;(void)threshold;(void)stats;return 0;
+}
+int qc_moe(qc_workspace *w,float *out,const float *x,const int *ids,const float *weights,int nt,const void *g,int gt,const void *u,int ut,const void *d,int dt){
+    (void)w;(void)ids;(void)weights;(void)g;(void)gt;(void)u;(void)ut;(void)d;(void)dt;memcpy(out,x,(size_t)nt*D*4);return 0;
+}
 int qg_zero(void *dst,size_t bytes){(void)dst;(void)bytes;return 0;}
 int qg_moe_map(int *map,const int *ids,int tokens){(void)map;(void)ids;(void)tokens;return 0;}
 int qg_moe_gather(float *out,const float *x,const int *map,int n){(void)out;(void)x;(void)map;(void)n;return 0;}
@@ -55,6 +62,15 @@ int main(void){
     assert(events==4 && calls==5);
     assert(qwen_reset(&m)==0);qwen_get_handoff_profile(&m,&out);
     assert(out.layer_handoffs[12]==3); /* Work counters survive conversation reset. */
+    static float x[D],out_cpu[D],x_cpu[D],weights[10],weights_cpu[10],moeout[D];
+    static unsigned char masks[NL*512];
+    m.x=x;m.cpu_x=x_cpu;m.cpu_out=out_cpu;m.cpu_weights=weights_cpu;m.route_weights=weights;m.moeout=moeout;m.resident_masks=masks;
+    m.fixed_hotlist=1;uint64_t uploads=m.stats.expert_handoffs;
+    for(int k=0;k<10;k++){routes[k]=k;weights[k]=.1f;}routes[9]=511;
+    assert(grouped_moe(&m,&m.layers[12],1,0)==0);
+    assert(m.cpu_reduced && m.cpu_stats.layer_handoffs==1 && m.cpu_stats.token_layers==1);
+    assert(m.cpu_stats.activation_bytes==D*8+10*4 && m.stats.expert_handoffs==uploads);
+    assert(cache_slot(&m,&m.layers[12],511,NULL)<0); /* Cold upload is forbidden after pinning. */
     puts("Handoff scheduler: cold, warm, partial miss, batch, per-layer, MTP exclusion and reset passed.");
     return 0;
 }

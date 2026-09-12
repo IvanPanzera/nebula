@@ -25,20 +25,20 @@ def available():
 
 def page_selection(value, count):
     if not isinstance(value, str) or len(value) > 200:
-        raise ValueError('Intervallo di pagine non valido.')
+        raise ValueError('Invalid page range.')
     selected = set()
     for part in value.split(',') if value.strip() else [f'1-{count}']:
         match = re.fullmatch(r'\s*(\d+)\s*(?:-\s*(\d+)\s*)?', part)
         if not match:
-            raise ValueError('Indica le pagine come 1-5 oppure 1,3,7-9.')
+            raise ValueError('Use a page range such as 1-5 or 1,3,7-9.')
         start, end = int(match[1]), int(match[2] or match[1])
         if not 1 <= start <= end <= count:
-            raise ValueError(f'Le pagine devono essere comprese tra 1 e {count}.')
+            raise ValueError(f'Pages must be between 1 and {count}.')
         if end-start >= 50:
-            raise ValueError('Converti al massimo 50 pagine per volta usando il campo Pagine.')
+            raise ValueError('Select at most 50 pages per conversion.')
         selected.update(range(start-1, end))
     if not 1 <= len(selected) <= 50:
-        raise ValueError('Converti al massimo 50 pagine per volta usando il campo Pagine.')
+        raise ValueError('Select at most 50 pages per conversion.')
     return sorted(selected)
 
 
@@ -46,13 +46,13 @@ def create_job(name, data, pages='', force_ocr=False):
     name = name.replace('\\', '/').rsplit('/', 1)[-1]
     suffix = Path(name).suffix.lower()
     if suffix not in ('.pdf', '.png', '.jpg', '.jpeg', '.webp'):
-        raise ValueError('Sono supportati PDF, PNG, JPEG e WebP.')
+        raise ValueError('Supported formats: PDF, PNG, JPEG and WebP.')
     if not 0 < len(data) <= MAX_UPLOAD or not name or len(name) > 180 or any(ord(c)<32 for c in name):
-        raise ValueError('File non valido o superiore a 25 MiB.')
+        raise ValueError('Invalid file or size above 25 MiB.')
     if suffix == '.pdf' and not data[:1024].lstrip().startswith(b'%PDF-'):
-        raise ValueError('Il contenuto non è un PDF valido.')
+        raise ValueError('The file is not a valid PDF.')
     if not isinstance(pages, str) or len(pages) > 200 or type(force_ocr) is not bool:
-        raise ValueError('Opzioni documento non valide.')
+        raise ValueError('Invalid document options.')
     ident = uuid.uuid4().hex
     folder = DOCUMENTS/ident
     folder.mkdir(parents=True)
@@ -65,7 +65,7 @@ def create_job(name, data, pages='', force_ocr=False):
 def download(path):
     match = re.fullmatch(r'/api/documents/([a-f0-9]{32})/(document\.md|document\.zip)', path)
     if not match:
-        raise ValueError('Documento non valido.')
+        raise ValueError('Invalid document.')
     return DOCUMENTS/match[1]/match[2]
 
 
@@ -125,11 +125,11 @@ def stream_document(engine, folder):
             elif kind == 'document_done':
                 process.wait(timeout=10)
                 if process.returncode:
-                    raise RuntimeError('Il modulo documenti si è chiuso con un errore.')
+                    raise RuntimeError('The document worker exited with an error.')
                 yield event
                 return
             elif kind in ('error', 'process_exit'):
-                raise RuntimeError(event.get('message', 'Conversione interrotta. Consulta il log del documento.'))
+                raise RuntimeError(event.get('message', 'Conversion interrupted. See the document log.'))
             else:
                 yield event
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:

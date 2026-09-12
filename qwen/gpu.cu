@@ -7,12 +7,40 @@
 #include <math.h>
 #include <stdlib.h>
 
+static __thread cudaStream_t capture_stream;
+static int attention_shared_limit=8192, index_shared_limit=4096;
+typedef struct { cudaStream_t stream; cudaGraph_t graph; cudaGraphExec_t exec; int active; } qg_graph;
+extern "C" void qg_graph_destroy(void *ptr) {
+    qg_graph *g=(qg_graph*)ptr;if(!g)return;
+    if(g->active){cudaStreamEndCapture(g->stream,&g->graph);capture_stream=0;}
+    if(g->exec)cudaGraphExecDestroy(g->exec);
+    if(g->graph)cudaGraphDestroy(g->graph);
+    if(g->stream)cudaStreamDestroy(g->stream);
+    free(g);
+}
+extern "C" int qg_graph_begin(void **out) {
+    if(!out||*out||capture_stream)return cudaErrorInvalidValue;
+    qg_graph *g=(qg_graph*)calloc(1,sizeof(*g));if(!g)return cudaErrorMemoryAllocation;
+    int rc=cudaStreamCreate(&g->stream);
+    if(!rc)rc=cudaStreamBeginCapture(g->stream,cudaStreamCaptureModeThreadLocal);
+    if(rc){qg_graph_destroy(g);return rc;}
+    g->active=1;capture_stream=g->stream;*out=g;return 0;
+}
+extern "C" int qg_graph_end(void *ptr) {
+    qg_graph *g=(qg_graph*)ptr;if(!g||!g->active)return cudaErrorInvalidValue;
+    int rc=cudaStreamEndCapture(g->stream,&g->graph);g->active=0;capture_stream=0;
+    if(!rc)rc=cudaGraphInstantiate(&g->exec,g->graph,NULL,NULL,0);
+    return rc;
+}
+extern "C" int qg_graph_launch(void *ptr) {
+    qg_graph *g=(qg_graph*)ptr;return g&&g->exec?cudaGraphLaunch(g->exec,0):cudaErrorInvalidValue;
+}
 extern "C" void *qg_alloc(size_t n) { void *p=0; return cudaMalloc(&p,n)==cudaSuccess?p:0; }
 extern "C" void qg_free(void *p) { if(p) cudaFree(p); }
 extern "C" int qg_write(void *d,const void *s,size_t n) { return cudaMemcpy(d,s,n,cudaMemcpyHostToDevice); }
 extern "C" int qg_read(void *d,const void *s,size_t n) { return cudaMemcpy(d,s,n,cudaMemcpyDeviceToHost); }
-extern "C" int qg_copy(void *d,const void *s,size_t n) { return cudaMemcpyAsync(d,s,n,cudaMemcpyDeviceToDevice); }
-extern "C" int qg_zero(void *d,size_t n) { return cudaMemsetAsync(d,0,n); }
+extern "C" int qg_copy(void *d,const void *s,size_t n) { return cudaMemcpyAsync(d,s,n,cudaMemcpyDeviceToDevice,capture_stream); }
+extern "C" int qg_zero(void *d,size_t n) { return cudaMemsetAsync(d,0,n,capture_stream); }
 extern "C" int qg_sync(void) { return cudaDeviceSynchronize(); }
 extern "C" int qg_memory(size_t *f,size_t *t) { return cudaMemGetInfo(f,t); }
 extern "C" const char *qg_error(int e) { return cudaGetErrorString((cudaError_t)e); }
@@ -152,11 +180,11 @@ static __global__ void mm_kernel(float *out,const unsigned char *w,int type,int 
 }
 extern "C" int qg_matmul(float *o,const void *w,int type,int rows,int cols,const float *x,int nt) {
     size_t stride=row_bytes(type,cols);
-    if(!stride || rows<1 || cols<1 || nt<1 || nt>2048 ||
+    if(!stride || rows<1 || cols<1 || nt<1 || nt>8192 ||
        ((type==12 || type==13 || type==14) && cols%256) ||
        ((type==2 || type==6 || type==7 || type==8 || type==20) && cols%32)) return cudaErrorInvalidValue;
-    if(nt<=4)mm_small_kernel<<<(rows+7)/8,256>>>(o,(const unsigned char*)w,type,rows,cols,x,nt,stride);
-    else mm_kernel<<<dim3((rows+7)/8,(nt+15)/16),256>>>(o,(const unsigned char*)w,type,rows,cols,x,nt,stride);
+    if(nt<=4)mm_small_kernel<<<(rows+7)/8,256,0,capture_stream>>>(o,(const unsigned char*)w,type,rows,cols,x,nt,stride);
+    else mm_kernel<<<dim3((rows+7)/8,(nt+15)/16),256,0,capture_stream>>>(o,(const unsigned char*)w,type,rows,cols,x,nt,stride);
     return cudaGetLastError();
 }
 static __global__ void gather_kernel(float *out,const unsigned char *w,int type,int n,size_t stride,int row) {
@@ -164,14 +192,14 @@ static __global__ void gather_kernel(float *out,const unsigned char *w,int type,
 }
 extern "C" int qg_gather(float *o,const void *w,int type,int cols,int row) {
     size_t stride=row_bytes(type,cols);if(!stride || row<0) return cudaErrorInvalidValue;
-    gather_kernel<<<(cols+255)/256,256>>>(o,(const unsigned char*)w,type,cols,stride,row);return cudaGetLastError();
+    gather_kernel<<<(cols+255)/256,256,0,capture_stream>>>(o,(const unsigned char*)w,type,cols,stride,row);return cudaGetLastError();
 }
 static __global__ void dequant_kernel(float *o,const unsigned char *w,int type,int rows,int cols,size_t stride) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<rows*cols)o[i]=weight_at(w+(size_t)(i/cols)*stride,type,i%cols);
 }
 extern "C" int qg_dequant(float *o,const void *w,int type,int rows,int cols) {
     size_t stride=row_bytes(type,cols);if(!stride)return cudaErrorInvalidValue;
-    dequant_kernel<<<(rows*cols+255)/256,256>>>(o,(const unsigned char*)w,type,rows,cols,stride);return cudaGetLastError();
+    dequant_kernel<<<(rows*cols+255)/256,256,0,capture_stream>>>(o,(const unsigned char*)w,type,rows,cols,stride);return cudaGetLastError();
 }
 static __global__ void norm_kernel(float *o,const float *x,const float *w,int width,int groups,int wg,int l2,float eps) {
     int g=blockIdx.x,base=g*width;float ss=0;
@@ -182,45 +210,45 @@ static __global__ void norm_kernel(float *o,const float *x,const float *w,int wi
 }
 extern "C" int qg_norm(float *o,const float *x,const float *w,int width,int groups,int nt,int wg,int l2,float eps) {
     if(width<1 || groups<1 || nt<1) return cudaErrorInvalidValue;
-    norm_kernel<<<groups*nt,256>>>(o,x,w,width,groups,wg,l2,eps);return cudaGetLastError();
+    norm_kernel<<<groups*nt,256,0,capture_stream>>>(o,x,w,width,groups,wg,l2,eps);return cudaGetLastError();
 }
 static __global__ void unary_kernel(float *o,const float *x,int n,int op,float s) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<n) {float a=x[i]*s;o[i]=op==0?a*sig(a):op==1?sig(a):a;}
 }
 extern "C" int qg_unary(float *o,const float *x,int n,int op,float s) {
-    unary_kernel<<<(n+255)/256,256>>>(o,x,n,op,s);return cudaGetLastError();
+    unary_kernel<<<(n+255)/256,256,0,capture_stream>>>(o,x,n,op,s);return cudaGetLastError();
 }
 static __global__ void binary_kernel(float *o,const float *a,const float *b,int n,int op) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<n) o[i]=op==0?a[i]+b[i]:a[i]*b[i];
 }
 extern "C" int qg_binary(float *o,const float *a,const float *b,int n,int op) {
-    binary_kernel<<<(n+255)/256,256>>>(o,a,b,n,op);return cudaGetLastError();
+    binary_kernel<<<(n+255)/256,256,0,capture_stream>>>(o,a,b,n,op);return cudaGetLastError();
 }
 static __global__ void hc_init_kernel(float *o,const float *x,int d,int nt) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<nt*d*4) o[i]=x[(i/(d*4))*d+i%d];
 }
 extern "C" int qg_hc_init(float *o,const float *x,int d,int nt) {
-    hc_init_kernel<<<(d*4*nt+255)/256,256>>>(o,x,d,nt);return cudaGetLastError();
+    hc_init_kernel<<<(d*4*nt+255)/256,256,0,capture_stream>>>(o,x,d,nt);return cudaGetLastError();
 }
 static __global__ void hc_read_kernel(float *o,const float *x,const float *gate,int d,int nt) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<d*nt) {int base=(i/d)*4*d+i%d;float s=0;
         for(int h=0;h<4;h++) s+=x[base+h*d]*sig(gate[base+h*d]);o[i]=s*0.25f;}
 }
 extern "C" int qg_hc_read(float *o,const float *x,const float *g,int d,int nt) {
-    hc_read_kernel<<<(d*nt+255)/256,256>>>(o,x,g,d,nt);return cudaGetLastError();
+    hc_read_kernel<<<(d*nt+255)/256,256,0,capture_stream>>>(o,x,g,d,nt);return cudaGetLastError();
 }
 static __global__ void hc_write_kernel(float *r,const float *x,const float *inj,int d,int nt) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<d*4*nt) {int t=i/(d*4),h=(i/d)%4;r[i]+=x[t*d+i%d]*2.0f*sig(inj[t*4+h]*0.25f);}
 }
 extern "C" int qg_hc_write(float *r,const float *x,const float *g,int d,int nt) {
-    hc_write_kernel<<<(d*4*nt+255)/256,256>>>(r,x,g,d,nt);return cudaGetLastError();
+    hc_write_kernel<<<(d*4*nt+255)/256,256,0,capture_stream>>>(r,x,g,d,nt);return cudaGetLastError();
 }
 static __global__ void mtp_concat_kernel(float *o,const float *e,const float *h,int d,int nt) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<nt*8*d) {int t=i/(8*d),part=(i/d)%2,branch=(i/(2*d))%4;
         o[i]=part?h[t*4*d+branch*d+i%d]:e[t*d+i%d];}
 }
 extern "C" int qg_mtp_concat(float *o,const float *e,const float *h,int d,int nt) {
-    mtp_concat_kernel<<<(nt*8*d+255)/256,256>>>(o,e,h,d,nt);return cudaGetLastError();
+    mtp_concat_kernel<<<(nt*8*d+255)/256,256,0,capture_stream>>>(o,e,h,d,nt);return cudaGetLastError();
 }
 /* Histories are oldest-first [history_time, channel]; update only after all
  * output rows have read the old history, so chunking cannot overwrite inputs. */
@@ -235,7 +263,7 @@ static __global__ void conv_kernel(float *o,const float *x,const float *w,float 
 }
 extern "C" int qg_conv(float *o,const float *x,const float *w,float *hist,int c,int k,int dil,int nt,int silu) {
     if(k<1 || dil<1 || nt<1 || o==x) return cudaErrorInvalidValue;
-    conv_kernel<<<(c+255)/256,256>>>(o,x,w,hist,c,k,dil,nt,silu);return cudaGetLastError();
+    conv_kernel<<<(c+255)/256,256,0,capture_stream>>>(o,x,w,hist,c,k,dil,nt,silu);return cudaGetLastError();
 }
 /* One warp owns an output value column of S; four key entries per lane.
  * Preserve FP32 recurrent state and GGML's head modulo mapping (48 V / 16 QK). */
@@ -260,15 +288,15 @@ static __global__ void gdn_kernel(float *o,const float *qkv,const float *alpha,c
     for(int j=0;j<4;j++) state[(h*128+col)*128+j*32+lane]=s[j];
 }
 extern "C" int qg_gdn(float *o,const float *qkv,const float *al,const float *be,const float *a,const float *dt,float *s,int nt,float eps) {
-    gdn_kernel<<<dim3(48,32),128>>>(o,qkv,al,be,a,dt,s,nt,eps);return cudaGetLastError();
+    gdn_kernel<<<dim3(48,32),128,0,capture_stream>>>(o,qkv,al,be,a,dt,s,nt,eps);return cudaGetLastError();
 }
 static __global__ void gate_kernel(float *x,const float *g,int n) {int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<n)x[i]*=sig(g[i]);}
-extern "C" int qg_gate(float *x,const float *g,int n) {gate_kernel<<<(n+255)/256,256>>>(x,g,n);return cudaGetLastError();}
+extern "C" int qg_gate(float *x,const float *g,int n) {gate_kernel<<<(n+255)/256,256,0,capture_stream>>>(x,g,n);return cudaGetLastError();}
 static __global__ void qsplit_kernel(float *q,float *g,const float *x,int nt) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<nt*6144){int t=i/6144,h=(i/256)%24,d=i%256;
         q[i]=x[t*12288+h*512+d];g[i]=x[t*12288+h*512+256+d];}
 }
-extern "C" int qg_qsplit(float *q,float *g,const float *x,int nt) {qsplit_kernel<<<(nt*6144+255)/256,256>>>(q,g,x,nt);return cudaGetLastError();}
+extern "C" int qg_qsplit(float *q,float *g,const float *x,int nt) {qsplit_kernel<<<(nt*6144+255)/256,256,0,capture_stream>>>(q,g,x,nt);return cudaGetLastError();}
 static __device__ void rotate_pair(float *x,int i,int pos,float theta) {
     float angle=pos*powf(theta,-2.0f*i/64.0f),sn,cs;sincosf(angle,&sn,&cs);
     float a=x[i],b=x[i+32];x[i]=a*cs-b*sn;x[i+32]=a*sn+b*cs;
@@ -278,13 +306,13 @@ static __global__ void rope_kernel(float *x,int d,int heads,int nt,int pos,float
 }
 extern "C" int qg_rope(float *x,int d,int heads,int nt,int pos,float theta) {
     if(d<64 || pos<0)return cudaErrorInvalidValue;
-    rope_kernel<<<heads*nt,32>>>(x,d,heads,nt,pos,theta);return cudaGetLastError();
+    rope_kernel<<<heads*nt,32,0,capture_stream>>>(x,d,heads,nt,pos,theta);return cudaGetLastError();
 }
 static __global__ void kv_kernel(__half *cache,const float *x,int n,int offset) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<n)cache[offset+i]=__float2half_rn(x[i]);
 }
 extern "C" int qg_kv_store(void *cache,const float *x,int width,int nt,int pos) {
-    kv_kernel<<<(width*nt+255)/256,256>>>((__half*)cache,x,width*nt,pos*width);return cudaGetLastError();
+    kv_kernel<<<(width*nt+255)/256,256,0,capture_stream>>>((__half*)cache,x,width*nt,pos*width);return cudaGetLastError();
 }
 /* Each block computes one Q head: scores are parallel in time, followed by a
  * stable softmax and a coalesced reduction over values. Temporary scores live
@@ -309,17 +337,54 @@ static __global__ void attention_kernel(float *o,const float *q,const __half *k,
     if(tid<256){float value=0;for(int p=0;p<limit;p++)value+=scores[p]*__half2float(v[p*512+kh*256+tid]);
         o[(t*24+h)*256+tid]=value/denom;}
 }
+/* Long contexts use two score passes through a fixed 16 KiB tile. Preserve
+ * the old reduction order (position modulo 256 for the denominator, ascending
+ * positions for values), without requiring context-sized shared memory. */
+static __global__ void attention_tiled_kernel(float *o,const float *q,const __half *k,const __half *v,
+                                              const int *allowed,int nt,int pos,int cap) {
+    const int tile=4096;
+    int h=blockIdx.x,t=blockIdx.y,tid=threadIdx.x,limit=pos+t+1,kh=h/12;
+    __shared__ float scores[tile],maximum,denominator;
+    if(!tid)maximum=-INFINITY;
+    __syncthreads();
+    for(int base=0;base<limit;base+=tile){
+        int size=min(tile,limit-base);
+        for(int j=tid;j<size;j+=256){int p=base+j;float s=-INFINITY;
+            if(!allowed||allowed[(size_t)t*((cap+3)/4)+p/4]){
+                s=0;for(int d=0;d<256;d++)s+=q[(t*24+h)*256+d]*__half2float(k[p*512+kh*256+d]);s*=0.0625f;}
+            scores[j]=s;}
+        __syncthreads();
+        if(!tid)for(int j=0;j<size;j++)maximum=fmaxf(maximum,scores[j]);
+        __syncthreads();
+    }
+    float total=0,value=0;
+    for(int base=0;base<limit;base+=tile){
+        int size=min(tile,limit-base);
+        for(int j=tid;j<size;j+=256){int p=base+j;float s=-INFINITY;
+            if(!allowed||allowed[(size_t)t*((cap+3)/4)+p/4]){
+                s=0;for(int d=0;d<256;d++)s+=q[(t*24+h)*256+d]*__half2float(k[p*512+kh*256+d]);s*=0.0625f;}
+            float e=expf(s-maximum);scores[j]=e;total+=e;}
+        __syncthreads();
+        for(int j=0;j<size;j++)value+=scores[j]*__half2float(v[(base+j)*512+kh*256+tid]);
+        __syncthreads();
+    }
+    float sum=block_sum(total);if(!tid)denominator=sum;
+    __syncthreads();o[(t*24+h)*256+tid]=value/denominator;
+}
 extern "C" int qg_attention(float *o,const float *q,const void *k,const void *v,const int *allowed,int nt,int pos,int cap) {
-    if(cap<1 || cap>24576 || pos<0 || nt<1 || nt>cap || pos>cap-nt)return cudaErrorInvalidValue;
-    attention_kernel<<<dim3(24,nt),256,(size_t)(pos+nt)*sizeof(float)>>>(o,q,(const __half*)k,(const __half*)v,allowed,nt,pos,cap);
+    if(cap<1 || cap>98304 || pos<0 || nt<1 || nt>8192 || nt>cap || pos>cap-nt)return cudaErrorInvalidValue;
+    if(pos+nt<=attention_shared_limit)
+        attention_kernel<<<dim3(24,nt),256,(size_t)(pos+nt)*sizeof(float),capture_stream>>>(o,q,(const __half*)k,(const __half*)v,allowed,nt,pos,cap);
+    else attention_tiled_kernel<<<dim3(24,nt),256,0,capture_stream>>>(o,q,(const __half*)k,(const __half*)v,allowed,nt,pos,cap);
     return cudaGetLastError();
 }
 /* Pooled keys are immutable once a block is complete. The incomplete tail is
  * kept separately for rollback; its members are always visible causally. */
 static __global__ void index_kernel(float *keys,float *tail,int *allowed,const float *raw,const float *query,
-                                    const float *kn,const float *qn,int nt,int pos,int cap,int sort_capacity,float theta,float eps) {
+                                    const float *kn,const float *qn,int nt,int pos,int cap,int sort_capacity,float theta,float eps,void *scratch) {
     __shared__ float q[512],pooled[128];
-    extern __shared__ float score[];
+    extern __shared__ float shared_score[];
+    float *score=scratch?(float*)scratch:shared_score;
     int *order=(int*)(score+sort_capacity);
     int tid=threadIdx.x,blocks=(cap+3)/4;
     for(int t=0;t<nt;t++) {
@@ -364,20 +429,29 @@ static __global__ void index_kernel(float *keys,float *tail,int *allowed,const f
         __syncthreads();
     }
 }
-extern "C" int qg_index(float *keys,float *tail,int *allowed,const float *raw,const float *query,const float *kn,const float *qn,int nt,int pos,int cap,float theta,float eps) {
-    if(cap<1 || cap>24576 || pos<0 || nt<1 || nt>cap || pos>cap-nt)return cudaErrorInvalidValue;
+extern "C" int qg_index_workspace(float *keys,float *tail,int *allowed,const float *raw,const float *query,const float *kn,const float *qn,int nt,int pos,int cap,float theta,float eps,void *scratch) {
+    if(cap<1 || cap>98304 || pos<0 || nt<1 || nt>8192 || nt>cap || pos>cap-nt)return cudaErrorInvalidValue;
     int count=1;while(count<(pos+nt)/4)count*=2;
-    index_kernel<<<1,256,(size_t)count*(sizeof(float)+sizeof(int))>>>(keys,tail,allowed,raw,query,kn,qn,nt,pos,cap,count,theta,eps);return cudaGetLastError();
+    if(count<=index_shared_limit)scratch=NULL;
+    else if(!scratch)return cudaErrorInvalidValue;
+    index_kernel<<<1,256,scratch?0:(size_t)count*8,capture_stream>>>(keys,tail,allowed,raw,query,kn,qn,nt,pos,cap,count,theta,eps,scratch);return cudaGetLastError();
+}
+extern "C" int qg_index(float *keys,float *tail,int *allowed,const float *raw,const float *query,const float *kn,const float *qn,int nt,int pos,int cap,float theta,float eps) {
+    return qg_index_workspace(keys,tail,allowed,raw,query,kn,qn,nt,pos,cap,theta,eps,NULL);
 }
 extern "C" int qg_prepare_context(int cap) {
-    if(cap<1 || cap>24576)return cudaErrorInvalidValue;
-    /* Ada allows 99 KiB per block. 24K attention needs 96 KiB of scores;
-     * index sorting pads 6144 completed blocks to 8192 entries (64 KiB).
-     * Opt in once at model initialization, not at every decode layer. */
-    int count=1;while(count<(cap+3)/4)count*=2;
-    int rc=cudaFuncSetAttribute(attention_kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,cap*sizeof(float));
+    if(cap<1 || cap>98304)return cudaErrorInvalidValue;
+    int device,shared;int rc=cudaGetDevice(&device);if(rc)return rc;
+    rc=cudaDeviceGetAttribute(&shared,cudaDevAttrMaxSharedMemoryPerBlockOptin,device);if(rc)return rc;
+    /* Account for each kernel's static shared allocations, including reductions. */
+    cudaFuncAttributes a,b;
+    rc=cudaFuncGetAttributes(&a,attention_kernel);if(rc)return rc;
+    rc=cudaFuncGetAttributes(&b,index_kernel);if(rc)return rc;
+    attention_shared_limit=min(cap,(shared-(int)a.sharedSizeBytes)/4);
+    index_shared_limit=1;while(index_shared_limit*2<=(shared-(int)b.sharedSizeBytes)/8)index_shared_limit*=2;
+    rc=cudaFuncSetAttribute(attention_kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,attention_shared_limit*4);
     if(rc)return rc;
-    return cudaFuncSetAttribute(index_kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,count*(sizeof(float)+sizeof(int)));
+    return cudaFuncSetAttribute(index_kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,index_shared_limit*8);
 }
 static __global__ void route_kernel(int *ids,float *weights,const float *logits,int nt) {
     __shared__ float scores[512];int t=blockIdx.x,i=threadIdx.x;
@@ -389,7 +463,29 @@ static __global__ void route_kernel(int *ids,float *weights,const float *logits,
             ids[t*10+k]=best;weights[t*10+k]=expf(scores[best]-largest);total+=weights[t*10+k];scores[best]=-INFINITY;}
         for(int k=0;k<10;k++)weights[t*10+k]/=total;}
 }
-extern "C" int qg_route(int *ids,float *weights,const float *logits,int nt) {route_kernel<<<nt,512>>>(ids,weights,logits,nt);return cudaGetLastError();}
+extern "C" int qg_route(int *ids,float *weights,const float *logits,int nt) {route_kernel<<<nt,512,0,capture_stream>>>(ids,weights,logits,nt);return cudaGetLastError();}
+static __global__ void prune_routes_kernel(int *ids,float *weights,const unsigned char *resident,
+                                            int nt,double threshold,qg_prune_stats *stats) {
+    int t=blockIdx.x*blockDim.x+threadIdx.x;if(t>=nt)return;
+    int missing=0;double mass=0;
+    for(int k=0;k<10;k++){int e=ids[t*10+k];if(e<0||e>=512)return;
+        if(!resident[e]){missing++;mass+=(double)weights[t*10+k];}}
+    atomicAdd((unsigned long long*)&stats->token_layers,1ULL);
+    atomicAdd((unsigned long long*)&stats->missing_selections,(unsigned long long)missing);
+    /* Negative encodings <= -2 preserve the omitted expert ID. -1 remains
+     * the router's invalid-distribution sentinel. No renormalization. */
+    if(missing && threshold>0 && mass<threshold){
+        for(int k=0;k<10;k++){int e=ids[t*10+k];if(!resident[e]){ids[t*10+k]=-e-2;weights[t*10+k]=0;}}
+        atomicAdd((unsigned long long*)&stats->skipped_selections,(unsigned long long)missing);
+        atomicAdd((unsigned long long*)&stats->avoided_token_handoffs,1ULL);
+        atomicAdd(&stats->skipped_mass,mass);
+    }
+}
+extern "C" int qg_prune_routes(int *ids,float *weights,const unsigned char *resident,
+                                int nt,double threshold,qg_prune_stats *stats) {
+    if(nt<1||nt>8192||threshold<0||threshold>0.1||!isfinite(threshold))return cudaErrorInvalidValue;
+    prune_routes_kernel<<<(nt+127)/128,128,0,capture_stream>>>(ids,weights,resident,nt,threshold,stats);return cudaGetLastError();
+}
 static __global__ void moe_map_kernel(int *map,const int *ids,int nt) {
     __shared__ int prefix[512],carry;int e=blockIdx.x,tid=threadIdx.x;
     if(!tid)carry=0;__syncthreads();
@@ -403,16 +499,16 @@ static __global__ void moe_map_kernel(int *map,const int *ids,int nt) {
     }
 }
 extern "C" int qg_moe_map(int *map,const int *ids,int nt) {
-    if(nt<1||nt>2048)return cudaErrorInvalidValue;
+    if(nt<1||nt>8192)return cudaErrorInvalidValue;
     int threads=32;while(threads<nt && threads<512)threads*=2;
-    moe_map_kernel<<<512,threads>>>(map,ids,nt);return cudaGetLastError();
+    moe_map_kernel<<<512,threads,0,capture_stream>>>(map,ids,nt);return cudaGetLastError();
 }
 static __global__ void moe_gather_kernel(float *out,const float *x,const int *map) {
     int rank=blockIdx.x,t=map[rank];
     for(int d=threadIdx.x;d<2560;d+=blockDim.x)out[rank*2560+d]=x[t*2560+d];
 }
 extern "C" int qg_moe_gather(float *o,const float *x,const int *map,int selected) {
-    moe_gather_kernel<<<selected,256>>>(o,x,map);return cudaGetLastError();
+    moe_gather_kernel<<<selected,256,0,capture_stream>>>(o,x,map);return cudaGetLastError();
 }
 static __global__ void moe_scatter_kernel(float *slots,const float *x,const float *w,const int *ids,const int *map,int expert) {
     __shared__ int slot;int rank=blockIdx.x,t=map?map[rank]:rank;
@@ -420,14 +516,14 @@ static __global__ void moe_scatter_kernel(float *slots,const float *x,const floa
     if(slot>=0)for(int d=threadIdx.x;d<2560;d+=blockDim.x)slots[(t*10+slot)*2560+d]=x[rank*2560+d]*w[t*10+slot];
 }
 extern "C" int qg_moe_scatter(float *o,const float *x,const float *w,const int *ids,const int *map,int expert,int selected) {
-    moe_scatter_kernel<<<selected,256>>>(o,x,w,ids,map,expert);return cudaGetLastError();
+    moe_scatter_kernel<<<selected,256,0,capture_stream>>>(o,x,w,ids,map,expert);return cudaGetLastError();
 }
 static __global__ void moe_reduce_kernel(float *out,const float *slots,int nt) {
     int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<nt*2560){int t=i/2560,d=i%2560;float sum=0;
         for(int k=0;k<10;k++)sum+=slots[(t*10+k)*2560+d];out[i]=sum;}
 }
 extern "C" int qg_moe_reduce(float *out,const float *slots,int nt) {
-    moe_reduce_kernel<<<(nt*2560+255)/256,256>>>(out,slots,nt);return cudaGetLastError();
+    moe_reduce_kernel<<<(nt*2560+255)/256,256,0,capture_stream>>>(out,slots,nt);return cudaGetLastError();
 }
 static __global__ void mtp_gate_up_kernel(float *mid,const float *x,const int *ids,const unsigned char *g,int gt,size_t gs,const unsigned char *u,int ut,size_t us) {
     int row=blockIdx.x*8+threadIdx.x/32,lane=threadIdx.x%32,rank=blockIdx.y,t=blockIdx.z,e=ids[t*10+rank];
@@ -449,19 +545,19 @@ extern "C" int qg_mtp_moe(float *slots,float *mid,const float *x,const int *ids,
     size_t gs=row_bytes(gt,2560),us=row_bytes(ut,2560),ds=row_bytes(dt,640);
     /* Catchup replays the anchor and all sixteen accepted proposals. */
     if(!gs||!us||!ds||nt<1||nt>17)return cudaErrorInvalidValue;
-    mtp_gate_up_kernel<<<dim3(80,10,nt),256>>>(mid,x,ids,(const unsigned char*)g,gt,gs,(const unsigned char*)u,ut,us);
+    mtp_gate_up_kernel<<<dim3(80,10,nt),256,0,capture_stream>>>(mid,x,ids,(const unsigned char*)g,gt,gs,(const unsigned char*)u,ut,us);
     cudaError_t rc=cudaGetLastError();if(rc)return rc;
-    mtp_down_kernel<<<dim3(320,10,nt),256>>>(slots,mid,ids,weights,(const unsigned char*)d,dt,ds);return cudaGetLastError();
+    mtp_down_kernel<<<dim3(320,10,nt),256,0,capture_stream>>>(slots,mid,ids,weights,(const unsigned char*)d,dt,ds);return cudaGetLastError();
 }
 static __global__ void shared_add_kernel(float *o,const float *x,const float *g,int nt) {int i=blockIdx.x*blockDim.x+threadIdx.x;if(i<nt*2560)o[i]+=x[i]*sig(g[i/2560]);}
-extern "C" int qg_shared_add(float *o,const float *x,const float *g,int nt) {shared_add_kernel<<<(nt*2560+255)/256,256>>>(o,x,g,nt);return cudaGetLastError();}
+extern "C" int qg_shared_add(float *o,const float *x,const float *g,int nt) {shared_add_kernel<<<(nt*2560+255)/256,256,0,capture_stream>>>(o,x,g,nt);return cudaGetLastError();}
 static __global__ void ple_gate_kernel(float *o,const float *key,const float *query,const float *v,int nt) {
     int branch=blockIdx.x,tid=threadIdx.x;float s=0;for(int i=tid;i<2560;i+=blockDim.x)s+=key[branch*2560+i]*query[branch*2560+i];
     s=block_sum(s)*0.01976423537605237f;
     float gate=sig(copysignf(sqrtf(fmaxf(fabsf(s),1e-6f)),s));if(s==0)gate=0.5f;
     for(int i=tid;i<2560;i+=blockDim.x)o[branch*2560+i]=v[(branch/4)*2560+i]*gate;
 }
-extern "C" int qg_ple_gate(float *o,const float *k,const float *q,const float *v,int nt) {ple_gate_kernel<<<nt*4,256>>>(o,k,q,v,nt);return cudaGetLastError();}
+extern "C" int qg_ple_gate(float *o,const float *k,const float *q,const float *v,int nt) {ple_gate_kernel<<<nt*4,256,0,capture_stream>>>(o,k,q,v,nt);return cudaGetLastError();}
 static __global__ void argmax_kernel(int *ids,const float *x,int n) {
     __shared__ float vals[256];__shared__ int idx[256],bad[256];int tid=threadIdx.x,t=blockIdx.x;float best=-INFINITY;int bi=0,invalid=0;
     for(int i=tid;i<n;i+=256){float v=x[t*n+i];invalid|=isnan(v)||v==INFINITY;if(v>best){best=v;bi=i;}}
@@ -469,4 +565,49 @@ static __global__ void argmax_kernel(int *ids,const float *x,int n) {
     for(int d=128;d;d/=2){if(tid<d){bad[tid]|=bad[tid+d];if(vals[tid+d]>vals[tid] || (vals[tid+d]==vals[tid] && idx[tid+d]<idx[tid])){vals[tid]=vals[tid+d];idx[tid]=idx[tid+d];}}__syncthreads();}
     if(!tid)ids[t]=(bad[0]||!isfinite(vals[0]))?-1:idx[0];
 }
-extern "C" int qg_argmax(int *ids,const float *x,int n,int nt) {argmax_kernel<<<nt,256>>>(ids,x,n);return cudaGetLastError();}
+extern "C" int qg_argmax(int *ids,const float *x,int n,int nt) {argmax_kernel<<<nt,256,0,capture_stream>>>(ids,x,n);return cudaGetLastError();}
+
+/* Score the actual proposed prefix. At temperature one, p(d)/p(best) is
+ * exp(logit[d]-logit[best]); no softmax, sort, or vocabulary upload is needed.
+ * Ties use the same lowest-ID order as argmax. The last row is the bonus token. */
+static __global__ void verify_kernel(int *ids,int *eligible,const float *x,const int *proposals,
+                                     int n,int count,int top_k,float max_gap) {
+    __shared__ float vals[256];__shared__ int idx[256],bad[256],ranks[256];
+    int tid=threadIdx.x,t=blockIdx.x,d=t<count?proposals[t]:-1;
+    float score=d>=0&&d<n?x[t*n+d]:-INFINITY,best=-INFINITY;
+    int bi=0,invalid=0,rank=0;
+    for(int i=tid;i<n;i+=256){float v=x[t*n+i];invalid|=isnan(v)||v==INFINITY;
+        if(v>best){best=v;bi=i;}
+        rank+=v>score||(v==score&&i<d);
+    }
+    vals[tid]=best;idx[tid]=bi;bad[tid]=invalid;ranks[tid]=rank;__syncthreads();
+    for(int s=128;s;s/=2){if(tid<s){bad[tid]|=bad[tid+s];ranks[tid]+=ranks[tid+s];
+        if(vals[tid+s]>vals[tid]||(vals[tid+s]==vals[tid]&&idx[tid+s]<idx[tid])){vals[tid]=vals[tid+s];idx[tid]=idx[tid+s];}
+    }__syncthreads();}
+    if(!tid){ids[t]=(bad[0]||!isfinite(vals[0]))?-1:idx[0];
+        if(t<count)eligible[t]=ids[t]>=0&&isfinite(score)&&ranks[0]<top_k&&vals[0]-score<=max_gap;
+    }
+}
+extern "C" int qg_verify(int *ids,int *eligible,const float *x,const int *proposals,int n,int count,int top_k,float max_gap) {
+    verify_kernel<<<count+1,256,0,capture_stream>>>(ids,eligible,x,proposals,n,count,top_k,max_gap);return cudaGetLastError();
+}
+
+/* Restore short causal histories from preserved inputs; no convolution or
+ * index ranking is repeated. Completed index blocks remain immutable. */
+static __global__ void history_prefix_kernel(float *state,const float *saved,const float *x,int c,int nh,int keep) {
+    int i=blockIdx.x*blockDim.x+threadIdx.x;if(i>=c*nh)return;
+    int src=i/c+keep;state[i]=src<nh?saved[src*c+i%c]:x[(src-nh)*c+i%c];
+}
+extern "C" int qg_history_prefix(float *state,const float *saved,const float *x,int c,int nh,int keep) {
+    if(!state||!saved||!x||c<1||nh<1||keep<1)return cudaErrorInvalidValue;
+    history_prefix_kernel<<<(c*nh+255)/256,256>>>(state,saved,x,c,nh,keep);return cudaGetLastError();
+}
+static __global__ void index_prefix_kernel(float *tail,const float *saved,const float *raw,int pos,int keep) {
+    int i=threadIdx.x,slot=i/128,d=i%128;
+    int last=keep-1-((pos+keep-1-slot)%4+4)%4;
+    tail[i]=last>=0?raw[last*128+d]:saved[i];
+}
+extern "C" int qg_index_prefix(float *tail,const float *saved,const float *raw,int pos,int keep) {
+    if(!tail||!saved||!raw||pos<0||keep<1)return cudaErrorInvalidValue;
+    index_prefix_kernel<<<1,512>>>(tail,saved,raw,pos,keep);return cudaGetLastError();
+}

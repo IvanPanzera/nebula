@@ -1,62 +1,95 @@
-# Benchmark record
+# Standard benchmark campaign — September 11–12, 2026
 
-[Project overview](../README.md) · [Machine-readable evidence](evidence/benchmark-8k.json)
+Nebula was tested with NVIDIA GenAI-Perf, IFEval and LiveBench on an Intel
+Core i9-9940X, 128 GB of RAM and a 12 GB NVIDIA GPU under Windows/WSL2.
+The configuration used 14 CPU threads, 27 resident experts per layer, a
+24,576-token context and a 2,048-token prefill batch. Native MTP, CUDA graphs,
+retained-prefix recovery and the time-aware draft controller were enabled.
+Thinking was off. Expert handoffs executed the complete routed MoE of the layer
+on the CPU; resident experts remained fixed in GPU memory.
 
-This page separates the historical 8K measurements from the configuration included in the September 9 source snapshot. Exporting the repository did not rerun the large model.
+## Protocol
 
-## Historical suite: September 8, 2026
+- **GenAI-Perf:** 512, 1,024 and 2,048 input tokens; 128 output tokens; three
+  repetitions per input length and verification level, concurrency one:
+  18 measured requests. Warmup requests were recorded separately.
+- **IFEval:** 40 questions, covering 60 checkable instructions, at levels 3 and 2.
+- **LiveBench:** 30 questions from release 2024-11-25, with six in each of
+  coding, mathematics, reasoning, language and data analysis, at both levels.
+- Quality answers had a 2,048-token limit. Each question was run once per level,
+  with alternating level order. Deterministic hash ordering and round-robin
+  selection across instruction/task groups selected the sample before generation.
+- All 70 pairs completed. The measured set comprises 158 requests and 73,013
+  output tokens. Generation and preparation finished in approximately 3.95 hours.
 
-RTX 4070 Ti 12 GB, 96 GB host RAM, Ubuntu/WSL, one text sequence, greedy decoding, Thinking Off, context capacity 8,192, 24 cached experts per layer and prefill chunks of 2,048. The target used the converted Q4 core and the original mixed-quantization routed experts.
+Level 3 requires the draft token to match the target's greedy choice. Level 2
+also permits a draft token in the target's top three when its probability is
+at least 80% of the target's first choice, with at most one such acceptance per
+block. All other model settings were identical.
 
-Six prompts: arithmetic, grounding, Italian explanation, JSON, Python and reasoning. The aggregate for each mode contains **260 committed decode tokens**. Prompts differ in output length; throughput is weighted by token count through the ratio of total tokens to total decode time.
+## Results
 
-| Mode | Decode seconds | Committed tokens/s | Draft acceptance |
-|---|---:|---:|---:|
-| Causal N=0 | 65.533 | 3.967 | Not applicable |
-| MTP N=1 | 60.670 | 4.285 | 84.25% |
-| MTP N=2 | 61.966 | 4.196 | 76.89% |
-| MTP N=3 | 70.441 | 3.691 | 65.44% |
-| MTP N=4 fixed | 85.730 | 3.033 | 55.52% |
-| Historical adaptive up to N=4 | 60.722 | 4.282 | 79.23% |
+| Measurement | Level 3 | Level 2 |
+| --- | ---: | ---: |
+| GenAI-Perf workload: native decode, weighted tokens/s | 7.19 | 7.54 |
+| Quality workload: native decode, weighted tokens/s | 8.87 | 9.07 |
+| IFEval strict prompt accuracy | 87.50% | 90.00% |
+| IFEval loose prompt accuracy | 90.00% | 90.00% |
+| IFEval strict instruction accuracy | 91.67% | 93.33% |
+| IFEval loose instruction accuracy | 93.33% | 93.33% |
+| LiveBench mean across five categories | 57.20 | 60.84 |
+| Answers reaching the output limit | 8 | 7 |
 
-N=1 improved the aggregate by approximately 8.0% over causal decoding in this suite. A single Python case reached approximately 5.35 tokens/s with fixed N=4; that case does not describe general throughput.
+Across the 70 paired scores, level 2 scored higher on three questions, level 3
+on one, and 66 tied. Eighteen pairs produced identical text. These observations
+describe the selected questions and settings; sampling uncertainty is especially
+large within the six-question LiveBench categories.
 
-### Timing protocol
+The complete measured set ranged from **8.43 to 22.21 prefill tokens/s** and
+**3.46 to 14.06 decode tokens/s**. These are per-request extrema. Native decode
+throughput divides the tokens after the first output token by the decode time;
+the first token belongs to prefill. Weighted rates divide summed token counts
+by summed phase durations. A one-token answer has no decode-rate measurement.
 
-Decode counts committed tokens and excludes the first token predicted during prefill. Loading and prompt processing are separate. The causal reference uses warmed baseline runs bracketing the variants. KV state is reset between trials; the expert cache is retained. Prefill and decode transfer counters are kept separately.
+## Timing, resources and grading
 
-The first model load took 840.886 seconds from the measured HDD. Host memory and PCIe traffic are central to this result; the 12 GB VRAM budget does not describe total system memory consumption. Expert handoff host time and DMA can overlap and should not be added as independent costs.
+The saved summary includes both native phase timings and GenAI-Perf client
+statistics. Client timings include adapter and streaming delivery overhead.
+Two runs had appreciable delivery delays: one 2,048-token level-3 request had
+about 7.52 seconds of additional delay before the first text, and one
+1,024-token level-3 request had a client generation span about 6.85 seconds
+longer than the native span. Both remain in the reported measurements.
 
-### Quality observations
+The resource monitor recorded 406 samples. Peak total GPU memory use was
+11.08 GiB and peak worker resident memory was 90.78 GiB; measured WSL swap use
+remained zero. The expert-upload counter remained zero. An SSD-byte counter
+was not present in these responses and is retained as null in the export.
 
-The original JSON case is a format failure: correct data was wrapped in Markdown. It remains failed in every mode in the exported summary. A later, separately prompted strict-JSON case passed and does not replace that result.
+IFEval used the upstream deterministic checks. LiveBench used the pinned,
+release-matched upstream evaluator. Two HTML grading attempts initially lacked
+the `lxml` dependency; their original saved answers were graded after restoring
+the dependency. No response was regenerated for that recovery. Grader controls
+passed and hashes of the 13 monitored engine files were checked.
 
-Local manual review recorded successful arithmetic, grounding and short reasoning. The Python function was identical across the compared modes and passed 105 functional cases in a separate review. The Italian answer was readable but included an overly absolute statement about cloud synchronization and backup. These are small checks, not a broad model-quality evaluation or proof of BF16 equivalence.
+## Evidence and provenance
 
-## Separate long-context and memory observations
+- [Protocol](evidence/protocol.json): selection seed, ordering, limits and metrics.
+- [Full aggregates](evidence/summary.json): category scores, timings, resource
+  statistics and paired comparisons at their recorded precision.
+- [Paired results](evidence/paired-results.csv): one row per question.
+- [Saved answers](evidence/answers.jsonl): all 140 original answers, recorded
+  scores and scalar metrics, plus the SHA256 of each source result file.
+- [Dataset revisions](evidence/dataset-sources.json),
+  [upstream source checksums](evidence/upstream-sources.json) and
+  [LiveBench grading revision](evidence/grader-revision.json).
+- [Export manifest](evidence/export-manifest.json): hashes of the exported data.
 
-The original 8,096-token retrieval prompt recovered the requested code in all tested modes. A subsequent CLI check reused 8,104 of 8,139 prompt tokens, processed only 35 new tokens and recorded approximately 3.29 seconds before the response. This illustrates prefix reuse on that test, not general first-token latency.
+The exported files were produced from the completed campaign. Dataset questions
+can be retrieved from the pinned upstream sources using the IDs in the paired
+results. Original benchmark data and evaluator code retain their upstream
+licenses. The selected benchmark questions were public test data; no user chat
+history is included in this export.
 
-The later 24K development session completed a 24,480-token prefill in approximately 519 seconds inferred from sampled phases. The response was manually interrupted. Retrieval and reuse at 24K remain unverified by that run.
-
-Recorded process RSS was approximately 72–73 GiB. In the monitored 24K session, sampled device free VRAM remained at least 645 MiB, including the observed desktop and driver state; peak process RSS was 72.912 GiB. These are sampled observations, not hard peak bounds. WSL swap was not observed in that run; whole-host Windows paging is a different measurement.
-
-These long-context, manual-quality and memory observations are transcribed from the development report. Their full raw logs are not included in this compact release. The accompanying public JSON contains the six-prompt historical selection metrics only.
-
-## Current configuration and open measurements
-
-The source snapshot uses a 24,576-token context and adaptive MTP N=4–16. On complete acceptance, the progression starts `4 → 4 → 5 → 6 → 8 → 11 → 16`; partial rejections reduce N, and rejection of the first proposal returns it to four. The actual number proposed can be smaller at EOS or context/output limits. Expert transfers resolved by the backend are not token rejections.
-
-Controller tests and CUDA component checks from development are evidence about those components. They do not supply a current full-model speed result. Before claiming completion:
-
-1. Compare N=0, fixed N=1 and adaptive N=4–16 on identical saved prompts and token limits.
-2. Include prose, coding, reasoning, strict structured output and long retrieval, keeping failures visible.
-3. Record complete loading, prefill, decode and prefix-reuse phases with direct free/reserved VRAM and host memory measurements.
-4. Validate output against the same quantized causal target and separately assess language quality.
-5. Repeat the setup on an independent machine.
-
-## Evidence provenance
-
-[benchmark-8k.json](evidence/benchmark-8k.json) is a selected-field export of the local `selection_summary.json`. Numeric values are unchanged. It includes the original file's SHA-256, benchmark configuration, aggregate/per-case metrics and quality flags. It omits unrelated environment details and is not the complete raw run archive.
-
-[source-snapshot.json](source-snapshot.json) records the copied source files and hashes. These hashes identify the current source candidate. They are **not** presented as the revision that generated the historical measurements.
+Upstream projects: [NVIDIA GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer/tree/main/genai-perf),
+[IFEval](https://github.com/google-research/google-research/tree/master/instruction_following_eval),
+and [LiveBench](https://github.com/LiveBench/LiveBench).

@@ -1,0 +1,6 @@
+{
+  "ram_experts_per_layer": 512,
+  "ngram": "ram",
+  "buffer_mib": 1024,
+  "io_threads": 2
+}

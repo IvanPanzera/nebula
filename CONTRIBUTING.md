@@ -1,33 +1,41 @@
 # Contributing to Nebula
 
-Contributions that improve correctness, reduce memory traffic or make results easier to reproduce are welcome. The initial target is one text sequence on a 12 GB NVIDIA GPU with host-memory expert offload.
+Describe the behavior being changed, the hardware used and the checks performed. Keep code comments, user-facing messages and documentation in English. Preserve the upstream model/tokenizer assets and their integrity hashes.
 
-## Report a result
+The supported product is Windows with WSL2, x86-64 CPUs and one NVIDIA GPU. Development and native checks run inside its Linux environment. Build CPU instruction variants separately; keep feature detection compatible with baseline x86-64. The production model uses fixed GPU experts, CPU MoE handoff, retained-prefix recovery and native MTP with the three documented verification levels.
 
-Include the source revision, GPU and driver, CUDA version, OS/WSL version, system RAM, storage layout and exact model revisions. Record quantization, context capacity, actual prompt length, prefill chunk size, cached experts, draft policy and thinking mode.
+## Local checks
 
-Attach the prompt, generation limit, committed-token count, prefill and decode times, acceptance, expert transfers, sampled memory usage and output correctness. Redact private prompts before uploading. Distinguish generated tokens, accepted proposals and discarded proposals.
-
-## Compare changes
-
-Use identical prompts and the same quantized target, with causal N=0 baselines around the candidate runs. Separate loading, prefill, first-token latency and decode; compare committed tokens per second. Preserve failed cases and responses cut off by their token limit.
-
-Do not attribute historical N=1 or adaptive-up-to-4 measurements to the current N=4–16 policy. Do not treat a CUDA allocation check, controller mock or component test as validation of the complete model.
-
-## Development checks
-
-From the repository root on the configured Linux/CUDA environment:
+From a Linux development environment with Python 3.12 and GCC:
 
 ```sh
-qwen/build/venv/bin/python qwen/test_decode.py
-qwen/build/venv/bin/python qwen/test_webui.py
-make -C qwen test-handoffs
-make -C qwen test-spec-capacity
-make -C qwen test
+python3 -m venv qwen/build/venv
+qwen/build/venv/bin/python -m pip install -r qwen/requirements.txt
+bash tools/check_cpu.sh qwen/build/venv/bin/python
 ```
 
-The decoder and WebUI tests use reference or simulated backends. The handoff test uses inert GPU operations. `make test` includes GPU numerical tests; full-model checks need the pinned weights and a free model session. Keep the instance lock and avoid simultaneous copies of the large model.
+This suite checks CPU numerical paths, SSD storage, hardware profiles, the download and preparation protocol, verification and the chat interface with test backends. It uses generated small tensors and fixture responses.
 
-Changes to routing, quantization, state restore or numerical kernels should include the relevant causal/token or numerical comparison and a before/after performance result. Keep public interfaces small and preserve existing license notices.
+Changes to CUDA, attention, speculative state or routing also require the relevant NVIDIA checks:
 
-See [setup](qwen/README.md) and [benchmark methodology](docs/BENCHMARKS.md).
+```sh
+make -C qwen -j4 all build/libqwen_cpu.so build/libqwen_probe.so
+make -C qwen test PYTHON=build/venv/bin/python
+make -C qwen test-spec-capacity
+qwen/build/venv/bin/python -m unittest discover -s qwen -p test_large_profiles.py
+```
+
+On Windows, validate the installer plan and build the executable with:
+
+```powershell
+powershell -NoProfile -File installer/test_installer.ps1
+python installer/build_release.py
+```
+
+The build writes `dist/NebulaSetup/NebulaSetup.exe` and its SHA256 manifest. See [installer development notes](installer/README.md) and [validation](docs/INSTALLER-VALIDATION.md).
+
+## Performance changes
+
+Compare the same prompts, verification level, response cap and hardware profile. Record model loading separately from prefill and generation. Preserve output-limited answers and failed attempts, and include token counts, elapsed times, expert handoffs and draft acceptance. State any quantization or routing changes explicitly. Benchmark evidence from the reference configuration is in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
+
+Keep full-model processes isolated through the existing model lock. Lightweight checks should leave an active chat session usable. Submit each change with a clear problem statement and reproducible validation commands.

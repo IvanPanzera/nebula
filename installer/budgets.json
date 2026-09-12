@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "table_sha256": "9a78419cd551938469ea10169fb7eec2801176efc0c89892eaa305e4120ecf52",
+  "profiles": [
+    {
+      "vram_gib": 8,
+      "ram_gib": 32,
+      "gpu_weights": 6016527360,
+      "gpu_states": 517988352,
+      "gpu_workspace": 540139776,
+      "gpu_required_free": 7879961856,
+      "ram_required_free": 23556113408,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 8,
+      "ram_gib": 64,
+      "gpu_weights": 6016527360,
+      "gpu_states": 517988352,
+      "gpu_workspace": 540139776,
+      "gpu_required_free": 7879961856,
+      "ram_required_free": 57928107008,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 8,
+      "ram_gib": 96,
+      "gpu_weights": 6016527360,
+      "gpu_states": 517988352,
+      "gpu_workspace": 540139776,
+      "gpu_required_free": 7879961856,
+      "ram_required_free": 70258115584,
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 8,
+      "ram_gib": 128,
+      "gpu_weights": 6016527360,
+      "gpu_states": 517988352,
+      "gpu_workspace": 540139776,
+      "gpu_required_free": 7879961856,
+      "ram_required_free": 99054059520,
+      "windows_reserve_gib": 16
+    },
+    {
+      "vram_gib": 12,
+      "ram_gib": 32,
+      "gpu_weights": 8139893760,
+      "gpu_states": 979361792,
+      "gpu_workspace": 1046262016,
+      "gpu_required_free": 10970823936,
+      "ram_required_free": 23581680640,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 12,
+      "ram_gib": 64,
+      "gpu_weights": 8139893760,
+      "gpu_states": 979361792,
+      "gpu_workspace": 1046262016,
+      "gpu_required_free": 10970823936,
+      "ram_required_free": 57953674240,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 12,
+      "ram_gib": 96,
+      "gpu_weights": 8139893760,
+      "gpu_states": 979361792,
+      "gpu_workspace": 1046262016,
+      "gpu_required_free": 10970823936,
+      "ram_required_free": 70416393216,
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 12,
+      "ram_gib": 128,
+      "gpu_weights": 8139893760,
+      "gpu_states": 979361792,
+      "gpu_workspace": 1046262016,
+      "gpu_required_free": 10970823936,
+      "ram_required_free": 99212337152,
+      "windows_reserve_gib": 16
+    },
+    {
+      "vram_gib": 16,
+      "ram_gib": 32,
+      "gpu_weights": 9068866560,
+      "gpu_states": 1671421952,
+      "gpu_workspace": 2058506496,
+      "gpu_required_free": 13604101376,
+      "ram_required_free": 23500104704,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 16,
+      "ram_gib": 64,
+      "gpu_weights": 9068866560,
+      "gpu_states": 1671421952,
+      "gpu_workspace": 2058506496,
+      "gpu_required_free": 13604101376,
+      "ram_required_free": 57739387904,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 16,
+      "ram_gib": 96,
+      "gpu_weights": 9068866560,
+      "gpu_states": 1671421952,
+      "gpu_workspace": 2058506496,
+      "gpu_required_free": 13604101376,
+      "ram_required_free": 70732948480,
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 16,
+      "ram_gib": 128,
+      "gpu_weights": 9068866560,
+      "gpu_states": 1671421952,
+      "gpu_workspace": 2058506496,
+      "gpu_required_free": 13604101376,
+      "ram_required_free": 99528892416,
+      "windows_reserve_gib": 16
+    },
+    {
+      "vram_gib": 24,
+      "ram_gib": 32,
+      "gpu_weights": 11723074560,
+      "gpu_states": 3055542272,
+      "gpu_workspace": 4090621184,
+      "gpu_required_free": 19674544384,
+      "ram_required_free": 23600827952,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 24,
+      "ram_gib": 64,
+      "gpu_weights": 11723074560,
+      "gpu_states": 3055542272,
+      "gpu_workspace": 4090621184,
+      "gpu_required_free": 19674544384,
+      "ram_required_free": 57840111152,
+      "windows_reserve_gib": 8
+    },
+    {
+      "vram_gib": 24,
+      "ram_gib": 96,
+      "gpu_weights": 11723074560,
+      "gpu_states": 3055542272,
+      "gpu_workspace": 4090621184,
+      "gpu_required_free": 19674544384,
+      "ram_required_free": 71364513328,
+      "windows_reserve_gib": 12
+    },
+    {
+      "vram_gib": 24,
+      "ram_gib": 128,
+      "gpu_weights": 11723074560,
+      "gpu_states": 3055542272,
+      "gpu_workspace": 4090621184,
+      "gpu_required_free": 19674544384,
+      "ram_required_free": 100160457264,
+      "windows_reserve_gib": 16
+    }
+  ],
+  "model_final_bytes": 101304576256,
+  "peak_install_bytes": 161928967616,
+  "expert_bytes_per_rank": 132710400,
+  "ngram_bytes": 28800138240
+}

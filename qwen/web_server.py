@@ -1,4 +1,4 @@
-"""Loopback-only Qwen WebUI; Python standard library, no external web service."""
+"""Loopback-only Nebula WebUI; Python standard library, no external web service."""
 import argparse
 import fcntl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +14,7 @@ import threading
 from urllib.parse import urlsplit, unquote
 from urllib.request import urlopen
 from config import CONTEXT, DRAFT_MIN, DRAFT_MAX
+from verification import SCALE, DEFAULT_LEVEL, LEVELS, settings
 from model_registry import GPU_LOCK, get_model, public_models, worker_command
 import documents
 
@@ -68,16 +69,19 @@ class Engine:
             state = dict(phase=self.phase, busy=self.gate.locked(), model_loaded=self.loaded,
                          error=self.last_error, cancel_requested=self.cancel_requested)
         model = get_model(self.model_id)
-        state.update(app='qwen-webui', context=model['context'], model=model['label'],
-                     model_id=self.model_id, models=public_models(), speculative=model['speculative'],
-                     external_busy=self.external_busy(), draft_policy='adaptive' if model['speculative'] else None,
+        state.update(app='qwen-webui', installation='nebula-wsl' if (ROOT/'runtime_profile.json').is_file() else 'development', context=model['context'], model='Flash-Next',
+                     model_id=self.model_id, models=[dict(m,label='Flash-Next') for m in public_models() if m['id']=='flash-next'], speculative=model['speculative'],
+                     external_busy=self.external_busy(), draft_policy='adaptive-time' if model['speculative'] else None,
                      draft_min=model.get('draft_min'), draft_max=model.get('draft_max'))
         state['documents_available'] = documents.available()
+        state['verification_levels'] = [settings(level) for level in LEVELS]
+        state['verification_default'] = DEFAULT_LEVEL
+        state['verification_scale'] = SCALE
         if state['phase'] == 'loading' and LOG.exists():
             with LOG.open('rb') as stream:
                 stream.seek(max(self.log_offset, LOG.stat().st_size-8192))
                 tail = stream.read().decode('utf-8', errors='replace')
-            matches = re.findall(r'routed RAM ([\d.]+) / ([\d.]+) GiB', tail)
+            matches = re.findall(r'(?:host|routed) RAM ([\d.]+) / ([\d.]+) GiB', tail)
             if matches:
                 current, total = map(float, matches[-1])
                 state['load_progress'] = min(99, round(100*current/total))
@@ -89,7 +93,7 @@ class Engine:
                 try:
                     events.put(json.loads(line))
                 except ValueError:
-                    events.put(dict(type='error', message='Risposta non valida dal motore. Consulta work/qwen/webui_engine.log.'))
+                    events.put(dict(type='error', message='Invalid engine response. See work/qwen/webui_engine.log.'))
         finally:
             events.put(dict(type='process_exit'))
 
@@ -127,11 +131,8 @@ class Engine:
         # drains all worker events, even when a browser disconnects mid-response.
         try:
             model_id = request.get('model', 'flash-next')
-            get_model(model_id)
-            if model_id != self.model_id:
-                self.close()
-                self.model_id = model_id
-                self.command = self.custom_command or worker_command(model_id)
+            if model_id != 'flash-next':
+                raise ValueError('This WebUI only supports Flash-Next.')
             self.start()
             self.process.stdin.write(json.dumps(request, ensure_ascii=False)+'\n')
             self.process.stdin.flush()
@@ -144,7 +145,7 @@ class Engine:
                     continue
                 kind = event.get('type')
                 if kind == 'done' and event.get('metrics'):
-                    event['metrics'].update(model_id=self.model_id, model=get_model(self.model_id)['label'],
+                    event['metrics'].update(model_id=self.model_id, model='Flash-Next',
                                             speculative=get_model(self.model_id)['speculative'])
                 with self.state_lock:
                     if kind == 'phase':
@@ -160,7 +161,7 @@ class Engine:
                     elif kind == 'process_exit':
                         self.phase = 'error'
                         self.loaded = False
-                        event = dict(type='error', message='Il processo Qwen si è chiuso. Consulta work/qwen/webui_engine.log e riprova.')
+                        event = dict(type='error', message='The inference process exited. See work/qwen/webui_engine.log and try again.')
                 if kind == 'phase' and self.cancel_requested:
                     self.stop()
                 yield event
@@ -209,38 +210,44 @@ class Engine:
 
 def validate_request(data):
     if not isinstance(data, dict):
-        raise ValueError('Richiesta non valida.')
+        raise ValueError('Invalid request.')
     messages = data.get('messages')
     if not isinstance(messages, list) or not 1 <= len(messages) <= 500:
-        raise ValueError('La conversazione non è valida.')
+        raise ValueError('Invalid conversation.')
     for i, item in enumerate(messages):
         role = 'user' if i % 2 == 0 else 'assistant'
         if not isinstance(item, dict) or item.get('role') != role or not isinstance(item.get('content'), str):
-            raise ValueError('Ordine o contenuto dei messaggi non valido.')
+            raise ValueError('Invalid message order or content.')
         if len(item['content']) > 300000:
-            raise ValueError('Il messaggio è troppo lungo.')
+            raise ValueError('The message is too long.')
         if 'reasoning_content' in item and (role != 'assistant' or
                 not isinstance(item['reasoning_content'], str) or len(item['reasoning_content']) > 300000):
-            raise ValueError('Contenuto del ragionamento non valido.')
+            raise ValueError('Invalid reasoning content.')
     if len(messages) % 2 != 1 or not messages[-1]['content'].strip():
-        raise ValueError('Scrivi un messaggio prima di inviarlo.')
+        raise ValueError('Enter a message before sending.')
     limit = data.get('max_tokens', 2048)
     if type(limit) is not int or not 1 <= limit <= 2048:
-        raise ValueError('Il limite di risposta deve essere tra 1 e 2048 token.')
+        raise ValueError('The response limit must be between 1 and 2048 tokens.')
     thinking = data.get('thinking', False)
     if type(thinking) is not bool:
-        raise ValueError('Thinking deve essere acceso o spento.')
+        raise ValueError('Thinking must be true or false.')
     model = data.get('model', 'flash-next')
-    if not isinstance(model, str):
-        raise ValueError('Modello non valido.')
+    if model != 'flash-next':
+        raise ValueError('This WebUI only supports Flash-Next.')
     get_model(model)
+    # Old browser tabs must not silently send a different meaning for 1/2/3.
+    if 'verification_level' in data or 'verification_scale' in data:
+        scale=data.get('verification_scale')
+        if type(scale) is not int or scale!=SCALE:
+            raise ValueError('Draft verification uses three levels. Refresh this page; API requests must include verification_scale: 3.')
+    level=settings(data.get('verification_level',DEFAULT_LEVEL))['level']
     clean = []
     for message in messages:
         item = dict(role=message['role'], content=message['content'])
         if 'reasoning_content' in message:
             item['reasoning_content'] = message['reasoning_content']
         clean.append(item)
-    return dict(messages=clean, max_tokens=limit, thinking=thinking, model=model)
+    return dict(messages=clean, max_tokens=limit, thinking=thinking, model=model, verification_level=level, verification_scale=SCALE)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -268,7 +275,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if not self.allowed():
-            return self.reply(403, dict(error='Host non consentito.'))
+            return self.reply(403, dict(error='Host not allowed.'))
         path = urlsplit(self.path).path
         if path == '/api/status':
             return self.reply(200, self.server.engine.status())
@@ -278,40 +285,40 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, file.read_bytes(),
                     'application/zip' if file.suffix == '.zip' else 'text/markdown; charset=utf-8')
             except (ValueError, FileNotFoundError):
-                return self.reply(404, dict(error='Documento non trovato.'))
+                return self.reply(404, dict(error='Document not found.'))
         files = {'/': ('index.html', 'text/html'), '/app.js': ('app.js', 'text/javascript'),
-                 '/style.css': ('style.css', 'text/css'), '/qwen-logo.png': ('qwen-logo.png', 'image/png')}
+                 '/style.css': ('style.css', 'text/css'), '/nebula-logo.svg': ('nebula-logo.svg', 'image/svg+xml')}
         if path not in files:
-            return self.reply(404, dict(error='Risorsa non trovata.'))
+            return self.reply(404, dict(error='Resource not found.'))
         name, mime = files[path]
         self.reply(200, (ASSETS/name).read_bytes(), mime+('; charset=utf-8' if mime.startswith('text/') else ''))
 
     def do_POST(self):
         if not self.allowed() or self.headers.get('X-Qwen-Client') != 'webui':
-            return self.reply(403, dict(error='Richiesta non consentita.'))
+            return self.reply(403, dict(error='Request not allowed.'))
         path = urlsplit(self.path).path
         if path == '/api/stop':
             self.server.engine.stop()
             return self.reply(200, dict(stopping=True))
         is_document = path == '/api/documents'
         if path != '/api/chat' and not is_document:
-            return self.reply(404, dict(error='Risorsa non trovata.'))
+            return self.reply(404, dict(error='Resource not found.'))
         if is_document and not documents.available():
-            return self.reply(503, dict(error='Il modulo OCR non è ancora installato.'))
+            return self.reply(503, dict(error='OCR is not installed.'))
         try:
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= (documents.MAX_UPLOAD if is_document else 2_000_000):
-                raise ValueError('Dimensione della richiesta non valida.')
+                raise ValueError('Invalid request size.')
             self.connection.settimeout(60 if is_document else 15)
             data = self.rfile.read(length)
             if len(data) != length:
-                raise ValueError('Caricamento incompleto.')
+                raise ValueError('Incomplete upload.')
             if not is_document:
                 request = validate_request(json.loads(data))
         except (ValueError, OSError) as exc:
             return self.reply(400, dict(error=str(exc)))
         if not self.server.engine.reserve():
-            return self.reply(409, dict(error='Qwen sta già elaborando una risposta. Attendi oppure interrompila.'))
+            return self.reply(409, dict(error='The engine is busy. Wait for the current operation or stop it.'))
         if is_document:
             try:
                 folder = documents.create_job(unquote(self.headers.get('X-Document-Name', '')),
@@ -365,14 +372,14 @@ def main():
                 with urlopen(f'http://127.0.0.1:{args.port}/api/status', timeout=2) as response:
                     existing = json.load(response)
                 if existing.get('app') == 'qwen-webui':
-                    print(f'WebUI già attiva: http://localhost:{args.port}', flush=True)
+                    print(f'WebUI already running: http://localhost:{args.port}', flush=True)
                     open_browser(args.port)
                     return
             except (OSError, ValueError):
                 pass
-        raise SystemExit(f'Impossibile aprire la WebUI sulla porta {args.port}: {exc}')
-    print(f'Qwen WebUI: http://localhost:{server.server_port}', flush=True)
-    print('Il modello si carica al primo messaggio. Ctrl+C chiude il server e libera la memoria.', flush=True)
+        raise SystemExit(f'Could not open the WebUI on port {args.port}: {exc}')
+    print(f'Nebula WebUI: http://localhost:{server.server_port}', flush=True)
+    print('The model loads with the first message. Ctrl+C stops the server and releases memory.', flush=True)
     if args.open_browser:
         open_browser(server.server_port)
     def shutdown(*_):
@@ -394,7 +401,7 @@ def open_browser(port):
         subprocess.Popen(['cmd.exe', '/d', '/c', 'start', '', f'http://localhost:{port}'],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
-        print(f'Apri http://localhost:{port} nel browser.', flush=True)
+        print(f'Open http://localhost:{port} in your browser.', flush=True)
 
 
 if __name__ == '__main__':

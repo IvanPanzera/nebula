@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "ubuntu": {
+    "url": "https://releases.ubuntu.com/noble/ubuntu-24.04.5-wsl-amd64.wsl",
+    "sha256": "bb415d824822c4b878125729af451a5d18fb13d1cf5cbed9a7393ad64ac6039e"
+  },
+  "cuda_keyring": {
+    "url": "https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb",
+    "sha256": "eea6cc5f0eaeb99082d054b8c05ae206a378e31e88048df0310d59f651dceed2",
+    "size": 4328
+  },
+  "cuda_toolkit": "12-8",
+  "minimum_windows_driver": "570.65"
+}

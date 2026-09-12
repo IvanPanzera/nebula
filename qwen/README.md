@@ -1,120 +1,54 @@
-# Preparing the Qwen engine
+# Nebula engine
 
-[Project overview](../README.md) · [Historical benchmarks](../docs/BENCHMARKS.md)
+The current configuration and measured results are described in the [project README](../README.md). Install from [NebulaSetup.exe](https://github.com/IvanPanzera/nebula/releases/download/v0.1.0-rc.1/NebulaSetup.exe), or follow the [developer checks](../CONTRIBUTING.md) when modifying the source.
 
-This guide describes the source snapshot's Flash-Next CLI and WebUI. It is a research setup, with a substantial model download and offline conversion step. The preparation sequence comes from the development machine; this exported repository still needs a clean installation on a second machine.
+## Source layout
 
-## Tested hardware and software assumptions
-
-| Component | Setup |
+| File | Responsibility |
 |---|---|
-| GPU | RTX 4070 Ti, 12 GB VRAM; the Makefile defaults to CUDA `sm_89` |
-| RAM | 96 GB installed; approximately 72–73 GiB process RSS in recorded runs |
-| OS | Windows with Ubuntu/WSL; the engine uses Linux interfaces including `mmap` and `fcntl` |
-| Python | 3.14 for the preparation tools; MTP conversion uses `Executor.map(buffersize=...)` |
-| Build tools | GCC, Make and NVIDIA CUDA with `nvcc`; reference tools install pinned CMake/Ninja |
-| Storage | Original GGUF files approximately 113 GB combined; additional room for derived weights, the roughly 26.8 GiB PLE copy, build files and free-space reserve |
+| `qwen.c`, `qwen.h` | Model loading, target/MTP execution, recurrent state and expert handoff |
+| `gpu.cu`, `gpu.h` | CUDA operators, attention, verification and reusable graphs |
+| `cpu.c`, `cpu_dispatch.c`, `cpu_portable.h`, `cpu_variant.h` | Quantized CPU arithmetic and instruction-set selection |
+| `ssd.c`, `ssd.h` | Bounded reads for experts kept on SSD |
+| `decode.py` | Speculative proposal, verification, correction and draft-window timing policy |
+| `native.py` | Python bindings and model/quantization integrity checks |
+| `profiles.py`, `hardware.py`, `hardware_profiles.json` | Hardware detection and the 16 approved installation profiles |
+| `storage.py`, `storage.json` | Host expert and n-gram storage policy |
+| `expert_ranking.json`, `hotlist.json` | Complete per-layer ranking and GPU-resident expert selection |
+| `chat.py`, `web_server.py`, `web_worker.py`, `web/` | Command-line chat and the English browser interface |
+| `documents.py`, `document_worker.py` | Document boundaries and optional document-conversion integration |
 
-On the measured machine, GGUFs were stored on a SATA HDD and the n-gram/PLE cache was on an NVMe-backed WSL filesystem. Cold model loading took about 14 minutes. This is a storage-specific observation.
+## Reference configuration
 
-## 1. Python environment
+The development defaults are 24,576 context tokens, prefill batches of 2,048, 27 fixed GPU experts per target layer and 14 CPU workers. Routed expert matrices use Q4_K for gate/up and IQ4_NL for down. The native MTP proposes 4–16 tokens and shares the target's vocabulary.
 
-Run the Linux commands from the repository root. Python 3.14, its venv support and a working CUDA toolchain must already be installed:
+When significant experts are missing from GPU memory, the CPU evaluates the routed MoE for that layer and token batch. The GPU continues attention, shared experts and the output head. Missing experts may be omitted when their combined current-token router weight is below 10%. A rejected draft token is corrected from the target's existing scores; retained target work is reused.
 
-```sh
-python3.14 -m venv qwen/build/venv
-qwen/build/venv/bin/python -m pip install -r qwen/requirements.txt requests
-```
+## RAM and SSD placement
 
-`requests` is required by the asset and reference preparation scripts and is supplied explicitly here. The existing `bootstrap.py` is retained in the snapshot, but the commands above make that prerequisite explicit.
+`storage.json` holds the selected policy. The installer writes it together with `runtime_profile.json` and the matching hotlist. These settings are validated at process startup.
 
-## 2. Download the pinned assets
-
-```sh
-qwen/build/venv/bin/python qwen/tokenizer_assets.py
-qwen/build/venv/bin/python qwen/assets.py --download
-```
-
-The scripts audit metadata and verify downloaded files. They populate `models/qwen/`, `work/qwen/` and the tokenizer directory under `work/research/`. These are generated local directories and are ignored by Git.
-
-| Asset | Pinned repository and revision |
+| Setting | Meaning |
 |---|---|
-| Target and tokenizer | `Qwen/Qwen3.8-Flash-Next` at `de4b8e4d43b917e7706784d8bb445c9af86a3540` |
-| Target GGUF and MTP | `unsloth/Qwen3.8-Flash-Next-GGUF` at `38bb39ee97821de2c9009abb7e93950eec396e66` |
-| Offline GGML quantizer / comparison engine | `danielhanchen/llama.cpp` at `d1a92352cbd417fd840b4e765c0b82f5fe3d1d89` |
+| `ram_experts_per_layer` | Total RAM-resident experts per layer, including CPU copies of GPU-resident experts. SSD holds the other `512 - ram_experts_per_layer`. |
+| `ngram` | `ram` or `ssd`; the SSD mode uses a bounded lookup cache. |
+| `buffer_mib` | Additional temporary RAM budget for cold expert reads. |
+| `io_threads` | Persistent concurrent SSD readers, from 1 to 4. |
 
-The target is the four-shard `UD-Q4_K_XL` distribution, approximately 111.33 GB. Its shared MTP GGUF adds approximately 1.907 GB. The native loader is specific to these assets.
+The expert ranking orders activation count descending, accumulated router weight descending for ties, then expert ID ascending. It contains all 512 experts for every target layer. The most highly ranked experts occupy GPU/RAM; the tail stays on SSD. Expert identity is the pair `(layer, expert ID)`.
 
-## 3. Prepare quantization and the SSD PLE cache
+Cold weights are read into bounded host buffers when the CPU needs them and released after the corresponding work. The engine subdivides large CPU prefill work to respect the temporary-memory budget. Storage counters expose requested read bytes, read counts and waiting times.
 
-```sh
-qwen/build/venv/bin/python qwen/reference_engine.py
-qwen/build/venv/bin/python qwen/quantize_mtp.py
-qwen/build/venv/bin/python qwen/quantize_core.py
-```
+## Building and starting from prepared assets
 
-The pinned reference build supplies the offline GGML quantizer. Flash-Next production inference uses the native engine in this repository. The target core uses Q4_K or IQ4_NL, while routers and normalizations retain their source precision. Routed experts retain the original mixed Q4_K/Q5_1/Q5_K/Q8_0 formats. MTP uses its shared Q4_K_M asset and a derived IQ4_NL down projection.
-
-Copy the unchanged PLE tensor to a fast Linux filesystem. On native Linux:
+Inside the installed WSL environment:
 
 ```sh
-qwen/build/venv/bin/python qwen/cache_ple.py --directory ~/.cache/city-of-brass/qwen
-```
-
-On WSL the copier also requires the physical free space of the drive containing the Linux virtual disk. For a virtual disk on **C:**, run from PowerShell in the repository root:
-
-```powershell
-$taskFreeBytes = [System.IO.DriveInfo]::new('C:').AvailableFreeSpace
-wsl -d Ubuntu -- qwen/build/venv/bin/python qwen/cache_ple.py --host-free-bytes $taskFreeBytes
-```
-
-Select the actual backing drive if it differs. The copier checks space for the PLE data plus 24 GiB headroom and verifies the copy. WSL virtual free space alone does not establish available physical disk space.
-
-## 4. Create the index and build
-
-With all model processes closed:
-
-```sh
-qwen/build/venv/bin/python qwen/model_index.py --mtp-iq4 --core-q4
-make -C qwen -j2
-```
-
-The default build architecture is `sm_89`. Changing it for another CUDA GPU requires separate numerical and memory validation; the 12 GB result was measured on the RTX 4070 Ti.
-
-## 5. Run locally
-
-```sh
+make -C qwen -j4
 qwen/build/venv/bin/python qwen/chat.py
-qwen/build/venv/bin/python qwen/chat.py --prompt "Explain how a mixture-of-experts router works."
-qwen/build/venv/bin/python qwen/chat.py --draft-max 1 --fixed-draft
-qwen/build/venv/bin/python qwen/chat.py --draft-max 0
-```
-
-In interactive mode, `/reset` clears the conversation and keeps weights loaded; `/exit` closes the model. Default context is 24,576 tokens, including prompt and response; default response limit is 2,048. Greedy decoding and Thinking Off are the defaults. The speculative policy starts at four proposals and can rise to sixteen.
-
-For the browser interface:
-
-```sh
 qwen/build/venv/bin/python qwen/web_server.py
 ```
 
-Open `http://localhost:8090`. The server binds to loopback and processes one model session. Close the CLI session before using the WebUI. The first message loads the weights; subsequent messages can reuse the model and conversation prefix. Stop may wait for the current computation to finish.
+Run one entry point at a time. Native execution requires the prepared `work/qwen/model.index`, matching verification manifest, generated profile and weights. The tokenizer is bundled in `assets/tokenizer/` and checked against its pinned manifest.
 
-The source includes optional light-model and OCR bridges. Their model configurations, OCR runtime and weights are not installed by this guide. The Windows WebUI launcher from the development workspace points to a separate local installation and is intentionally excluded; use the command above. The included `avvia_qwen.bat` is the repository-relative CLI launcher.
-
-## Verification and benchmark commands
-
-```sh
-qwen/build/venv/bin/python qwen/test_decode.py
-qwen/build/venv/bin/python qwen/test_webui.py
-make -C qwen test-handoffs
-make -C qwen test-spec-capacity
-make -C qwen test
-
-qwen/build/venv/bin/python qwen/benchmark.py --include-adaptive --long-context --multiturn --out work/qwen/new-benchmark
-qwen/build/venv/bin/python qwen/analyze_benchmark.py work/qwen/new-benchmark/report.json --out work/qwen/new-benchmark/summary.json
-```
-
-Full benchmarks occupy the GPU and load the large model. The current benchmark's adaptive mode uses N=4–16 and must produce its own result. `check_context.py` and `check_web_context.py` are retained development helpers that expect additional historical run files under `work/qwen/benchmark_daily_q4/`; the compact public evidence JSON alone is not their complete fixture.
-
-The source snapshot and unit checks establish packaging and controller behavior. They do not replace full-model numerical, quality or throughput validation.
+The standard Windows installation creates desktop and Start-menu launchers. Optional OCR integration uses separately configured document-conversion assets; plain-text chat is available with the base installation.

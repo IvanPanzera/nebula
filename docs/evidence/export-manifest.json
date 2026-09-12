@@ -1,0 +1,16 @@
+{
+  "campaign": "2026-09-11/12",
+  "method": "Projection of saved campaign files; no generation or scoring rerun.",
+  "original_summary_sha256": "d3621bc291b7be3a2f123557b3cb8ffe2a6bee81caea4ead1d73c594b97cadf7",
+  "answers": 140,
+  "question_pairs": 70,
+  "files": {
+    "answers.jsonl": "357ddce2b0db743d7086b6a7591f6a8fe8329e3905663f8112f4b1f73143d34e",
+    "dataset-sources.json": "9827921259b85136dc367a07efcc0b1a3b1d9b67ff02c396cda88973737d042a",
+    "grader-revision.json": "9158b6d1d2c32636d1541d3f47a98d76e3c52128330f32dc1841a73e61f7c17b",
+    "paired-results.csv": "9677a5030a9e025e78863d30595650889a8f07708e2ba5acc7df2e18ef14a522",
+    "protocol.json": "14865e47f523047308a52f51580acf1a010e097162310f6daae7edcee3db9878",
+    "summary.json": "363b1956b41a40b7da05f76e6481df164adfa993454bcee1689e06750173647c",
+    "upstream-sources.json": "d5456c6e979db20d68007fb25ac981135b5824dc2fc72a0f22e21fabc2864739"
+  }
+}

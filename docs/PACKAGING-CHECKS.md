@@ -1,20 +1,34 @@
-# Source export checks — September 9, 2026
+# Release packaging checks — September 12, 2026
 
-The private repository candidate was checked before upload. These checks do not load Flash-Next weights or establish a new inference speed result.
+The release was assembled from the confirmed engine and checked in a separate
+directory. The running development chat and its loaded weights were left intact.
 
 | Check | Result |
-|---|---|
-| Python syntax | All 40 Python source files parsed |
-| Documentation | Local Markdown file links resolved |
-| Historical metrics | All six aggregate token/time ratios match the exported throughput values |
-| Speculative controller | 10 tests passed |
-| WebUI protocol and worker | 13 tests passed, using reference/simulated backends and the official tokenizer |
-| Optional light-model bridge | 10 tests passed with simulated model behavior |
-| Document bridge | 5 tests passed without OCR model inference |
-| C handoff scheduler | Cold/warm cache, partial misses, batching, per-layer counters, MTP exclusion and reset passed with inert GPU operations |
+| --- | --- |
+| Native C/CUDA/header source identity | All 16 files match the confirmed source byte for byte |
+| Windows hardware and installer configuration | 89 assertions passed |
+| CPU dispatch | Scalar, AVX2 and AVX-512 passed 198 matrix comparisons and nine MoE comparisons; outputs bit-identical |
+| Half encodings | All 65,536 encodings checked for each available CPU backend |
+| Native handoff, host memory and SSD suites | Passed |
+| RAM/SSD MoE equivalence | Passed with 1, 5, 17, 18 and 33 input tokens |
+| Interrupted model preparation | Three tests passed |
+| Python profiles, storage, hardware, decoding, verification, WebUI and document protocol | 39 tests passed; two CUDA-only cases excluded from the CPU run |
+| Python syntax | Passed |
+| Windows executable build | Passed; embedded files have a SHA256 manifest |
+| Benchmark data export | 140 saved answers and 70 paired rows; no inference rerun |
+| Hardware tables | All 16 rows agree with the approved profiles |
 
-The WebUI tests initially failed because the clean export had no tokenizer assets. Supplying the four already-verified official tokenizer files and their manifest resolved that prerequisite; no engine code was changed. Those downloaded/generated assets are excluded from Git and obtained through the setup guide.
+The CPU-only suite is available as `bash tools/check_cpu.sh PYTHON`.
+CUDA and full-model checks from the development campaign are described in
+[installer validation](INSTALLER-VALIDATION.md). The release packaging check
+does not run another full-model benchmark or a clean-machine installation.
 
-Checks used the existing development Python environment (Python 3.14.4 on Ubuntu/WSL), except the standalone decoder test, which also passed with Windows Python 3.10. A clean dependency installation, CUDA numerical regression and full-model benchmark were not rerun for this packaging task.
+The source package contains engine code, the complete expert ranking,
+hardware profiles, the pinned tokenizer, installer sources and benchmark
+evidence. Model weights are obtained and prepared by the installer. Local
+runtime profiles, personal paths, chat history, cached credentials, build outputs
+and the earlier light-model integration are excluded.
 
-Source hashes are in [source-snapshot.json](source-snapshot.json). The current engine source differs in configuration from the historical 8K benchmark, as explained in [BENCHMARKS.md](BENCHMARKS.md).
+The standalone setup executable is distributed as a release asset with
+`SHA256SUMS.txt` and `release-manifest.json`. Its complete unattended installation
+on a clean Windows machine remains a release-candidate validation step.

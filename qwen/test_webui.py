@@ -12,12 +12,13 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from test_decode import Backend
-from config import CONTEXT
+from config import CONTEXT,CPU_THREADS,RESIDENT_EXPERTS
 import web_worker
 from web_server import Engine, make_server, validate_request
 
 
 class ReferenceBackend(Backend):
+    cpu_threads=CPU_THREADS
     def __init__(self, miss_positions=range(200)):
         super().__init__(CONTEXT, miss_positions=miss_positions)
         self.evaluated=0;self.resets=0;self.closed=False;self.visits=0
@@ -25,8 +26,12 @@ class ReferenceBackend(Backend):
         self.evaluated+=len(prompt);self.visits+=1;super().prefill(prompt,mtp)
     def target(self,tokens):
         self.evaluated+=len(tokens);self.visits+=1;super().target(tokens)
-    def stats(self):return dict(target_tokens=self.evaluated,expert_handoffs=self.visits*96,expert_upload_bytes=self.visits*96*1024)
+    def stats(self):return dict(target_tokens=self.evaluated,expert_handoffs=1152,expert_upload_bytes=1152*1024)
     def handoff_profile(self):return dict(layer_calls=[self.visits]*48,layer_handoffs=[self.visits]*48)
+    def optimization_stats(self):return dict(retained_tokens=0,prefix_restores=0,graph_launches=0,graph_captures=0,prefix_restore_seconds=0.)
+    def storage_stats(self):return dict(ram_experts_per_layer=512,ple_on_ssd=0,transient_peak_bytes=0,expert_read_bytes=0,expert_reads=0,expert_io_seconds=0.,expert_wait_seconds=0.,ple_disk_bytes=0,ple_cache_hits=0,ple_cache_misses=0)
+    def cpu_stats(self):return dict(layer_handoffs=self.visits*48,token_layers=self.evaluated*48,missing_selections=self.visits*200,activation_bytes=self.visits*1000,compute_seconds=self.visits*.01,handoff_seconds=self.visits*.011)
+    def prune_stats(self):return dict(token_layers=self.evaluated*48,missing_selections=self.visits*200,skipped_selections=self.visits*7,avoided_token_handoffs=self.visits*3,skipped_mass=self.visits*.05)
     def reset(self):self.history=[];self.resets+=1
     def close(self):self.closed=True
 
@@ -59,7 +64,7 @@ class WorkerTests(unittest.TestCase):
         return result,backend,factory.call_count
 
     def test_persistent_worker_uses_real_decoder_and_official_tokenizer(self):
-        req=dict(messages=[dict(role='user',content='Quanto fa 2 + 2?')],max_tokens=8)
+        req=dict(messages=[dict(role='user',content='What is 2 + 2?')],max_tokens=8)
         events,backend,loads=self.run_worker([req,req])
         self.assertEqual(loads,1)
         done=[e for e in events if e['type']=='done']
@@ -69,6 +74,18 @@ class WorkerTests(unittest.TestCase):
             metrics=event['metrics']
             self.assertEqual(metrics['draft_output_tokens']+metrics['target_output_tokens'],8)
             self.assertEqual(metrics['target_cpu_tokens'],0)
+            self.assertEqual(metrics['target_execution'],'hybrid-layer-cpu')
+            self.assertEqual(metrics['target_quantization'],'all-experts-Q4_K-IQ4_NL')
+            self.assertEqual(metrics['resident_experts_per_layer'],RESIDENT_EXPERTS)
+            self.assertEqual(metrics['cpu_threads'],CPU_THREADS)
+            self.assertEqual(metrics['storage']['ram_experts_per_layer'],512)
+            self.assertEqual(metrics['storage']['ssd_experts_per_layer'],0)
+            self.assertEqual(metrics['storage']['ngram'],'ram')
+            self.assertEqual(metrics['storage']['expert_read_bytes'],0)
+            self.assertEqual(metrics['cpu_moe_layer_calls'],metrics['expert_handoff_events'])
+            self.assertGreater(metrics['cpu_moe_token_layers'],0)
+            self.assertGreater(metrics['cpu_activation_mib'],0)
+            self.assertGreater(metrics['marginal_handoffs_avoided'],0)
             self.assertEqual(metrics['answer_tokens'],8)
             self.assertEqual(metrics['reasoning_tokens'],0)
             self.assertFalse(metrics['thinking'])
@@ -77,16 +94,18 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(metrics['expert_handoff_events'],metrics['prefill_handoff_events']+metrics['decode_handoff_events'])
             self.assertEqual(metrics['prefill_handoff_events'],48)
             self.assertEqual(sum(x['events'] for x in metrics['handoffs_by_layer']),metrics['expert_handoff_events'])
-            self.assertEqual(metrics['expert_uploads'],2*metrics['expert_handoff_events'])
+            self.assertEqual(metrics['expert_uploads'],0)
+            self.assertEqual(metrics['expert_upload_gib'],0)
+            self.assertEqual([x['layer'] for x in metrics['handoffs_by_layer']],list(range(48)))
         self.assertTrue(backend.closed)
-        self.assertTrue(any(c[0]=='restore' for c in backend.calls))
+        self.assertTrue(any(c[0]=='commit_prefix' for c in backend.calls))
 
     def test_oversized_context_rejected_before_native_load(self):
         events,_,loads=self.run_worker([dict(messages=[dict(role='user',content='testo '*CONTEXT)],max_tokens=8)])
         self.assertEqual(loads,0);self.assertEqual(events[0]['code'],'context_full')
 
     def test_cancel_resets_cache_keeps_weights_and_next_request_works(self):
-        req=dict(messages=[dict(role='user',content='Ciao')],max_tokens=8)
+        req=dict(messages=[dict(role='user',content='Hello')],max_tokens=8)
         events,backend,loads=self.run_worker([req,req],cancel=True)
         done=[e for e in events if e['type']=='done']
         self.assertTrue(done[0]['cancelled']);self.assertEqual(done[0]['metrics']['output_tokens'],1)
@@ -94,8 +113,8 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(loads,1);self.assertEqual(backend.resets,1)
 
     def test_context_limit_is_distinct_from_output_limit(self):
-        tokenizer,_,_=web_worker.encode_chat([dict(role='user',content='Ciao')])
-        request=dict(messages=[dict(role='user',content='Ciao')],max_tokens=2)
+        tokenizer,_,_=web_worker.encode_chat([dict(role='user',content='Hello')])
+        request=dict(messages=[dict(role='user',content='Hello')],max_tokens=2)
         with patch.object(web_worker,'encode_chat',return_value=(tokenizer,'',[1]*(CONTEXT-1))):
             events,_,_=self.run_worker([request])
         self.assertEqual(events[-1]['metrics']['stop_reason'],'context_limit')
@@ -105,16 +124,17 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(events[-1]['metrics']['output_tokens'],2)
 
     def test_web_default_adapts_to_sixteen_despite_resolved_handoffs(self):
-        req=dict(messages=[dict(role='user',content='Conta')],max_tokens=100)
+        req=dict(messages=[dict(role='user',content='Count')],max_tokens=100)
         events,_,_=self.run_worker([req],backend=ReferenceBackend(miss_positions=()))
         metrics=events[-1]['metrics']
-        self.assertEqual(metrics['draft_policy'],'adaptive')
-        self.assertEqual(metrics['max_draft_used'],16)
-        self.assertEqual([r[0] for r in metrics['draft_trace'][:7]],[4,4,5,6,8,11,16])
+        self.assertEqual(metrics['draft_policy'],'adaptive-time')
+        self.assertGreater(metrics['max_draft_used'],4)
+        self.assertLessEqual(metrics['max_draft_used'],16)
+        self.assertEqual(metrics['draft_trace'][0][0],4)
         self.assertGreater(metrics['expert_handoff_events'],0)
 
     def test_thinking_is_hidden_streamed_answer_and_counts_are_exact(self):
-        messages=[dict(role='user',content='Quanto fa sei per sette?')]
+        messages=[dict(role='user',content='What is six times seven?')]
         tok,off,_=web_worker.encode_chat(messages)
         _,on,_=web_worker.encode_chat(messages,'low')
         self.assertTrue(off.endswith('<think>\n\n</think>\n\n'))
@@ -135,15 +155,15 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(metrics['answer_tokens']+metrics['reasoning_tokens'],metrics['output_tokens'])
         self.assertEqual(metrics['draft_output_tokens']+metrics['target_output_tokens'],len(sequence))
         self.assertTrue(metrics['reasoning_complete'])
-        history=messages+[dict(role='assistant',content=done['text'],reasoning_content=done['reasoning_content']),dict(role='user',content='Confermi?')]
+        history=messages+[dict(role='assistant',content=done['text'],reasoning_content=done['reasoning_content']),dict(role='user',content='Can you confirm?')]
         clean=validate_request(dict(messages=history,thinking=True))
         _,rendered,_=web_worker.encode_chat(clean['messages'],'low')
         self.assertIn('<think>\nPRIVATE_REASONING_TEST\n</think>\n\n42.',rendered)
 
     def test_reasoning_exhaustion_and_cancellation_never_become_visible_answer(self):
-        tok,_,_=web_worker.encode_chat([dict(role='user',content='Ciao')])
+        tok,_,_=web_worker.encode_chat([dict(role='user',content='Hello')])
         sequence=tok.encode('PRIVATE reasoning that cannot fit in the budget',add_special_tokens=False).ids
-        req=dict(messages=[dict(role='user',content='Ciao')],max_tokens=2,thinking=True)
+        req=dict(messages=[dict(role='user',content='Hello')],max_tokens=2,thinking=True)
         for cancel in (False,True):
             events,_,_=self.run_worker([req],cancel=cancel,backend=SequenceBackend(sequence))
             done=events[-1];metrics=done['metrics']
@@ -167,9 +187,9 @@ def fixture():
         req=json.loads(line);stopped=False
         emit('phase',phase='prefill',model_loaded=True);time.sleep(.12)
         emit('phase',phase='thinking' if req.get('thinking') else 'generating')
-        text='Risposta simulata per il collaudo dell’interfaccia.\n\n**Un esempio Python:**\n\n```python\ndef unique(items):\n    return list(dict.fromkeys(items))\n```\n\n- Mantiene l’ordine originale.\n- Rimuove i duplicati.\n\n<script>alert("test")</script>'
+        text='Simulated response for interface testing.\n\n**A Python example:**\n\n```python\ndef unique(items):\n    return list(dict.fromkeys(items))\n```\n\n- Preserves the original order.\n- Removes duplicates.\n\n<script>alert("test")</script>'
         shown=''
-        slow='lenta' in req['messages'][-1]['content']
+        slow='slow' in req['messages'][-1]['content']
         for part in text.splitlines(keepends=True):
             if stopped:break
             shown+=part;emit('token',text=part,tokens=len(shown));time.sleep(.4 if slow else .015)
@@ -204,7 +224,7 @@ class HTTPTests(unittest.TestCase):
         return urlopen(Request(self.url+path,data=json.dumps(data or {}).encode(),
             headers=headers or {'X-Qwen-Client':'webui','Content-Type':'application/json'}),timeout=8)
     def test_assets_and_origin_restrictions(self):
-        for path in ('/','/style.css','/app.js','/api/status'):
+        for path in ('/','/style.css','/app.js','/nebula-logo.svg','/api/status'):
             with urlopen(self.url+path) as response:
                 self.assertEqual(response.status,200);self.assertIn("frame-ancestors 'none'",response.headers['Content-Security-Policy'])
         for headers in ({'X-Qwen-Client':'webui','Origin':'https://unrelated.example'}, {'Content-Type':'application/json'}):
@@ -214,6 +234,19 @@ class HTTPTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:urlopen(self.url+'/../web_worker.py')
         self.assertEqual(error.exception.code,404)
         error.exception.close()
+    def test_webui_only_exposes_and_accepts_flagship(self):
+        with urlopen(self.url+'/api/status') as response:
+            status=json.load(response)
+        self.assertEqual([m['id'] for m in status['models']],['flash-next'])
+        for model in ('light','unknown',None,[],{}):
+            with self.assertRaises(HTTPError) as error:
+                self.post('/api/chat',dict(model=model,messages=[dict(role='user',content='Test')]))
+            self.assertEqual(error.exception.code,400)
+            self.assertIn('only supports Flash-Next',error.exception.read().decode())
+            error.exception.close()
+        with urlopen(self.url+'/nebula-logo.svg') as response:
+            self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
+            self.assertIn(b'NEBULA',response.read())
     def test_invalid_history_and_limits(self):
         for body in ({'messages':[]},{'messages':[{'role':'assistant','content':'test'}]},
             {'messages':[{'role':'user','content':'test'}],'max_tokens':9000}):
@@ -221,21 +254,21 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(error.exception.code,400)
             error.exception.close()
         for thinking in ('on',1,None):
-            with self.assertRaises(ValueError):validate_request(dict(messages=[dict(role='user',content='Ciao')],thinking=thinking))
-        self.assertFalse(validate_request(dict(messages=[dict(role='user',content='Ciao')]))['thinking'])
+            with self.assertRaises(ValueError):validate_request(dict(messages=[dict(role='user',content='Hello')],thinking=thinking))
+        self.assertFalse(validate_request(dict(messages=[dict(role='user',content='Hello')]))['thinking'])
 
     def test_stop_while_thinking_and_followup(self):
-        request=dict(messages=[dict(role='user',content='risposta lenta')],thinking=True)
+        request=dict(messages=[dict(role='user',content='slow response')],thinking=True)
         with self.post('/api/chat',request) as response:
             while json.loads(response.readline()).get('phase')!='thinking':pass
             with self.post('/api/stop'):pass
             events=[json.loads(line) for line in response]
         self.assertTrue(events[-1]['cancelled'])
-        with self.post('/api/chat',dict(messages=[dict(role='user',content='Ciao')],thinking=False)) as response:
+        with self.post('/api/chat',dict(messages=[dict(role='user',content='Hello')],thinking=False)) as response:
             events=[json.loads(line) for line in response]
         self.assertFalse(events[-1]['cancelled'])
     def test_streaming_serialization_stop_and_reuse(self):
-        request=dict(messages=[dict(role='user',content='risposta lenta')],max_tokens=64)
+        request=dict(messages=[dict(role='user',content='slow response')],max_tokens=64)
         with self.post('/api/chat',request) as response:
             first=json.loads(response.readline());self.assertEqual(first['type'],'phase')
             while json.loads(response.readline()).get('phase')!='generating':pass
@@ -246,13 +279,13 @@ class HTTPTests(unittest.TestCase):
             events=[json.loads(line) for line in response]
             self.assertTrue(events[-1]['cancelled'])
         pid=self.engine.process.pid
-        with self.post('/api/chat',dict(messages=[dict(role='user',content='Seconda domanda')])) as response:
+        with self.post('/api/chat',dict(messages=[dict(role='user',content='Second question')])) as response:
             events=[json.loads(line) for line in response]
         self.assertEqual(events[-1]['type'],'done');self.assertFalse(events[-1]['cancelled'])
         self.assertIn('```python',events[-1]['text']);self.assertEqual(self.engine.process.pid,pid)
 
     def test_disconnect_drains_worker_and_releases_gate(self):
-        request=dict(messages=[dict(role='user',content='risposta lenta')])
+        request=dict(messages=[dict(role='user',content='slow response')])
         response=self.post('/api/chat',request)
         while json.loads(response.readline()).get('phase')!='generating':pass
         response.close()
@@ -265,7 +298,7 @@ class HTTPTests(unittest.TestCase):
         engine=Engine([sys.executable,'-u',str(Path(__file__).resolve()),'--fixture'])
         try:
             self.assertTrue(engine.reserve())
-            stream=engine.stream(dict(messages=[dict(role='user',content='risposta lenta')]))
+            stream=engine.stream(dict(messages=[dict(role='user',content='slow response')]))
             self.assertEqual(next(stream)['phase'],'preparing')
             engine.stop()
             events=list(stream)

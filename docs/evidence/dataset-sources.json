@@ -1,0 +1,91 @@
+{
+  "coding": {
+    "repo": "livebench/coding",
+    "revision": "a958549fdd8aa57be0a3fafe7b205ffc160ed5f4",
+    "files": [
+      {
+        "name": "data/test-00000-of-00001.parquet",
+        "bytes": 244785858,
+        "sha256": "5f02d01fb21672f5d84169f940adab46ff3ca09b9159fd42fdd289bc9be23502"
+      }
+    ],
+    "total_rows": 128,
+    "active_rows": 128,
+    "selected_tasks": {
+      "coding_completion": 3,
+      "LCB_generation": 3
+    }
+  },
+  "math": {
+    "repo": "livebench/math",
+    "revision": "bb66571c8ccf32d3df9e6f48b920d3770ff4aacb",
+    "files": [
+      {
+        "name": "data/test-00000-of-00001.parquet",
+        "bytes": 185605,
+        "sha256": "3d365cad1f9b8d7c5416d63866653d6854b270d9c93b51323d405ed5fd51df54"
+      }
+    ],
+    "total_rows": 368,
+    "active_rows": 232,
+    "selected_tasks": {
+      "olympiad": 2,
+      "math_comp": 2,
+      "AMPS_Hard": 2
+    }
+  },
+  "reasoning": {
+    "repo": "livebench/reasoning",
+    "revision": "6fc6498a5dfba553f69f4413feabade1f1a2d384",
+    "files": [
+      {
+        "name": "data/test-00000-of-00001.parquet",
+        "bytes": 88219,
+        "sha256": "4204bb94c812690ef8ba5f4c1f10b5b1082ca0b7bc532166834f798aa56e2a3c"
+      }
+    ],
+    "total_rows": 200,
+    "active_rows": 150,
+    "selected_tasks": {
+      "web_of_lies_v2": 2,
+      "spatial": 2,
+      "zebra_puzzle": 2
+    }
+  },
+  "language": {
+    "repo": "livebench/language",
+    "revision": "3ada32a2e53d5e04e57fa503384cb85ce9116c40",
+    "files": [
+      {
+        "name": "data/test-00000-of-00001.parquet",
+        "bytes": 287876,
+        "sha256": "76ba142afd242ca02d6baa8bb737608d2b416674f311d8f9d798b4e3908a499c"
+      }
+    ],
+    "total_rows": 190,
+    "active_rows": 140,
+    "selected_tasks": {
+      "typos": 2,
+      "connections": 2,
+      "plot_unscrambling": 2
+    }
+  },
+  "data_analysis": {
+    "repo": "livebench/data_analysis",
+    "revision": "31b9661ff678df9958e2f7fa228427f4c858c1a1",
+    "files": [
+      {
+        "name": "data/test-00000-of-00001.parquet",
+        "bytes": 144796,
+        "sha256": "fb86a7a02fa9eabf785d9e8af85955990cf6d228cc9d3f805a54f863bc8c4c52"
+      }
+    ],
+    "total_rows": 150,
+    "active_rows": 150,
+    "selected_tasks": {
+      "cta": 2,
+      "tablereformat": 2,
+      "tablejoin": 2
+    }
+  }
+}
