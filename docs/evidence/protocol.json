@@ -1,0 +1,31 @@
+{
+  "campaign": "Nebula standard benchmark sample 2026-09-11",
+  "started_utc": "2026-09-11T21:39:51Z",
+  "deadline_utc": "2026-09-12T05:39:51Z",
+  "generation_deadline_utc": "2026-09-12T04:54:51Z",
+  "levels": [
+    3,
+    2
+  ],
+  "thinking": false,
+  "max_output_tokens": 2048,
+  "quality_targets": {
+    "ifeval": 40,
+    "livebench": 30
+  },
+  "livebench_categories": [
+    "coding",
+    "math",
+    "reasoning",
+    "language",
+    "data_analysis"
+  ],
+  "livebench_per_category": 6,
+  "livebench_release": "2024-11-25",
+  "selection_seed": "nebula-standard-bench-20260911-v1",
+  "selection": "Deterministic hash ordering within task or instruction strata, round robin across strata. No answer-based selection or replacement.",
+  "execution": "Paired questions, alternating level order. One generated answer per question and level. Identical original prompts and token limits.",
+  "scope": "Samples with original upstream grading; not full leaderboard benchmark scores.",
+  "timeout_policy": "Stop launching pairs when insufficient estimated time remains. Preserve interrupted, failed and token-limited attempts. No silent retries or omissions.",
+  "metrics": "Native evaluated prefill tokens / prefill seconds; (output_tokens-1) / decode seconds; full latency, TTFT, draft acceptance, handoff and resource usage. Separate warmup and end-to-end client metrics."
+}
