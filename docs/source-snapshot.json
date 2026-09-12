@@ -1,0 +1,31 @@
+{
+  "date": "2026-09-12",
+  "native_source_unchanged_from_confirmed_engine": true,
+  "native_sha256": {
+    "qwen/cpu.c": "bbbd00dcbd129a3079bed56612e0accb69719b908b5d430ba8ee515d576975b9",
+    "qwen/cpu.h": "f091846e4922585fca5abbab45b2c8aa64bf924d21d6fa7526d6bb8c87ec6d1d",
+    "qwen/cpu_dispatch.c": "7f7cbe958cb89398541c97ea363e8e94cc3f22636b7a0d52e2ecea3114481aa9",
+    "qwen/cpu_portable.h": "33324eef3ebe75a532bd5bb22f2d974066a85dac6d7afb2198f248897445fdff",
+    "qwen/cpu_variant.h": "b67d0247d121e271ee21d4ab57e1339243130252fc2fd5986786fb9bbbca7353",
+    "qwen/gpu.cu": "d9c6a923302554015f460a6e9590460e7363dbc5a02645dc884a8bdeb3a88cf5",
+    "qwen/gpu.h": "16e21357a94cb5d03f7ea61005ab9cffcd57cb5f32bbbdbc78476a66f15260f4",
+    "qwen/qwen.c": "6cd74353b288ee18620a89d5236041d86d2fcab624c8aca8129686ea9ff1806e",
+    "qwen/qwen.h": "6e7f08b1e40e052c915330391c44d2bce84b5c3a0b382ec5d07e6479754b61ac",
+    "qwen/ssd.c": "d6c8958572c5f2f62cdbb96b80b377fa77badb12eb346a2d33945bee3bb5fb98",
+    "qwen/ssd.h": "ebcab3ca5a273bdf691f0d3f643cb98a9347eb4547a862bb60667fb783755600",
+    "qwen/test_handoffs.c": "36b3bcbb1067757b07bc26a08e2ccb990e4e6aa96f2cb8838a435de56e45cdc5",
+    "qwen/test_host_weights.c": "bf953f5a683b0958843525c469f31859686491f96f4732602f8e277556555603",
+    "qwen/test_spec_capacity.c": "a291633e1a589a36a97f4577685a4f929f90a7e5d1c288a49dc11911cf60f117",
+    "qwen/test_ssd.c": "0f6a85ec7252859c925419cadfadde88910ab183cef6585624c6708f8a636df7",
+    "qwen/test_storage_math.c": "0c0211ba02c64011b898bef0b557235dcf780815174e319d541972aa978a7a94"
+  },
+  "release_changes": [
+    "English documentation, interface diagnostics and test fixtures",
+    "Single official model registry",
+    "Tokenizer assets in assets/tokenizer",
+    "Portable installer payload and CI checks"
+  ],
+  "model_recipe": "installer/model_recipe.json",
+  "ranking": "qwen/expert_ranking.json",
+  "hardware_profiles": "qwen/hardware_profiles.json"
+}
