@@ -1,303 +1,488 @@
-# Nebula
+# Introduction
 
-[Download Windows installer](https://github.com/IvanPanzera/nebula/releases/download/v0.1.0-rc.1/NebulaSetup.exe) · [Installation](#installation) · [Benchmarks](#benchmark-results) · [Contributing](CONTRIBUTING.md)
+A Nebula spreads from a Dwarf Star (ds4 - <https://github.com/antirez/ds4>). The democratization of the use of large LLMs for local inference takes a step forward towards the private consumer user.
 
-## Introduction
+Nebula is built on the Qwen 3.8 Flash Next MoE model, using hardware with 12 GB of Nvidia RTX 4070 Ti VRAM, 128 GB of DDR4 3600Hz RAM and a 14-core i9 9940X CPU, with which the following results were obtained (see the benchmark section):
 
-A nebula grows from a [Dwarf Star](https://github.com/antirez/ds4). Nebula takes another step toward making large language models practical on personal computers.
-
-Nebula is a native C/CUDA inference engine built around **Qwen3.8-Flash-Next**, a mixture-of-experts (MoE) model. It combines NVIDIA GPU computation with CPU execution of expert layers and native multi-token prediction. The reference machine has an **RTX 4070 Ti with 12 GB VRAM, 128 GB DDR4-3600 RAM and a 14-core Intel Core i9-9940X**. The final benchmark campaign measured the following ranges:
-
-| Prefill batch (tokens) | Context capacity (tokens) | Prefill speed | Generation speed |
+| Prefill length | Context length | Prefill speed | Generation speed |
 | --- | --- | --- | --- |
-| 2048 | 24576 | 8.43–22.21 token/s | 3.46–14.06 token/s |
+| 2,048 | 24,576 | 8.43–22.21 token/s | 3.46–14.06 token/s |
 
-These are the minimum and maximum per-response average speeds across the 158 measured responses, described in [Benchmark results](#benchmark-results). The results support batch work and interactive chat, with responsiveness depending on the request.
+With these results, it is possible to guarantee adequate operation for batch work and, with some limitations, real-time interaction with a chatbot as well.
 
-The aim is to bring this experience to consumer workstations and capable laptops. Hardware allocation, quantization and the coordination of CPU and GPU computation are central to that goal. This overview explains the architecture; the source code provides the implementation details.
+Similar results (even better with more available VRAM and/or better available hardware) can be achieved on workstation hardware typically worth €3–5k or laptops worth €4–6k.
 
-## Logo
+This result comes from decisive architectural choices and targeted optimizations of computation, transfers and state management.
+
+This description is technical up to a point; for everything else, please analyze the code directly or through an AI agent.
+
+## The Logo
 
 <p align="center">
-  <img src="logo.svg" alt="Nebula logo with three small monoliths and spreading flames" width="300">
+  <img src="logo.svg" alt="Nebula logo" width="300">
 </p>
 
-*To bring Promethean fire to as many apes as possible, three small monoliths may work better than one large monolith. The flames inevitably lose some of their intensity as they spread.*
+*To spread the Promethean fire to as many apes as possible, three small monoliths may be better than the larger one. The flames inevitably become less intense as a result.*
 
-## Architecture
+## Description
 
-[DwarfStar (ds4)](https://github.com/antirez/ds4) provides the technical and methodological starting point. Nebula specializes that approach for Qwen3.8-Flash-Next through the following changes:
+DwarfStar (ds4) provides the technical and methodological starting point. Nebula develops a specialization of it for Qwen3.8-Flash-Next. The following implementations were made on the basis of the ds4 inference engine:
 
-- **Native C and CUDA execution.** Dedicated GPU routines implement the model's attention mechanisms, gated residual connections, MoE layers and native multi-token prediction (MTP).
-- **Speculative decoding.** The MTP component acts as a fast *draft*, proposing a sequence of tokens. The main model, called the *target*, verifies that sequence and supplies a correction when a proposal is rejected. Accepted work and the intermediate state needed to resume from the accepted prefix are retained.
-- **CPU and GPU coordination.** The draft and the target's attention, shared experts and output head run on the GPU. When a target layer needs significant experts outside its fixed GPU set, the CPU computes that layer's routed MoE and returns the resulting activation vector to the GPU. This event is called an *expert handoff*.
-- **Adaptive draft length.** The draft window responds to accepted and rejected proposals, then uses measured execution times to choose a length that improves useful tokens per second.
-- **Prioritized GPU resources.** Selected quantization formats and an expert importance ranking, or *hotlist*, determine the GPU-resident components. CUDA Graph reuses recorded sequences of GPU operations to reduce repeated launch overhead.
-- **CPU optimization.** On the reference machine, a persistent group of 14 CPU workers shares the work on small token batches. Specialized routines process the 4-bit expert matrices, reuse weights across several tokens and reduce intermediate copies. AVX-512 and AVX2 use CPU instructions that perform arithmetic on several values at once; the engine selects a supported path at startup.
-- **A chat WebUI.** The English interface supports multiple saved conversations, renaming and deletion, thinking on/off, context and prefill settings, verification levels, Markdown export and text attachments. Response statistics are shown through the **Statistics** switch.
-- **SSD streaming.** Lower-ranked experts and the large n-gram lookup table can stay on SSD. The installation profile chooses their placement according to available RAM and VRAM.
+- A native C engine with specialized CUDA kernels for Qwen3.8-Flash-Next, including Gated DeltaNet, Qwen Sparse Attention, Gated Residual, MoE and MTP.
 
-### How a response is generated
+- **Prediction decoding strategy:** the main model (target) is accompanied by its native autoregressive sub-model (MTP), the draft, to quickly generate a chain of tokens. The target model acts as a verifier and replaces the draft model in generation if verification is not satisfied. When a token is rejected, Nebula keeps the preceding accepted tokens and preserves the useful work already done on the rejected token; it does not recalculate projections, router, MoE and output head for the accepted tokens. The MTP is realigned with the accepted prefix.
 
-The target first reads the prompt during *prefill* and produces the first response token. MTP then proposes a chain of **N** tokens. The target evaluates the chain and checks each proposal in order, using the accepted prefix as its context.
+- **Division of tasks between GPU and CPU:** draft generation in prediction and target verification take place entirely on the GPU. Target generation takes place in hybrid GPU–CPU mode: the CPU executes the entire routed MoE of the layer/batch and returns the vector to the GPU; attention, router, shared experts and head remain on the GPU, limiting transfer bottlenecks over PCIe.
 
-Each of the target's 48 layers contains 512 distinct experts. Its router selects ten for a token and assigns a weight to each. The GPU holds a fixed set of **X experts per layer**, selected from the hotlist. Expert IDs are specific to a layer: expert 121 in layer 12 and expert 121 in layer 30 are separate sets of weights.
+- **Dynamic variation of the draft token window:** based on a reward/punishment system and the time taken.
 
-There are two token-verification outcomes:
+- **Prioritization of GPU computing resources:** based on calibrated quantizations of the model components and an expert importance ranking (hotlist) by activation and assigned weight. Use of CUDA Graph, which reuses previously recorded sequences of GPU operations, reducing the cost of repeated kernel launches.
 
-1. **The complete chain is accepted.** Nebula emits the accepted tokens and a bonus next token selected by the target. That token becomes the starting point for the next MTP chain.
-2. **A proposal is rejected.** Nebula keeps the preceding accepted tokens and emits the target's correction, selected from scores already calculated during verification. It restores the required intermediate state and realigns MTP with this accepted prefix. Target projections, routing, expert computation and output scores for the retained prefix are reused.
+- **CPU usage optimizations:** MoE for batches ≤17 with a single OpenMP region using 14 threads, parallelism across rows and weight reuse over tiles of 4 tokens. Specialized Q4_K/IQ4_NL kernels with AVX-512/FMA accumulators, fewer intermediate copies and preservation of the summation order.
 
-An expert handoff determines where a layer is evaluated. When the missing experts together carry **less than 10% of the router's weight on the current token**, their contribution is omitted. Otherwise, the CPU evaluates the required routed MoE for that layer and token batch, and the GPU continues the target. The final acceptance rule still uses the target's token scores. The GPU retains its fixed experts throughout generation; handoffs transfer activation vectors instead of uploading expert weights.
+- **WebUI with chatbot:** equipped with a chat list, chats that can be deleted and renamed, thinking on/off mode, context length selection, prefill length selection, model accuracy level selection, chat exports in md format and text document uploads.
 
-### Model components and quantization
+Like ds4, it supports SSD streaming for allocating the N-gram table (for all configurations except those with 128 GB of RAM) and for allocating the weights of a group of experts (see below).
 
-The model has 125 billion language-model parameters, approximately 6 billion activated per token, a further 51 billion parameters in n-gram embeddings and a 4-billion-parameter MTP component. Draft and target share a vocabulary of 248,320 tokens.
+### How it works:
 
-The following weight allocations describe the reference configuration: **27 experts per target layer in VRAM** and **all 512 per layer in RAM**, including CPU copies of the GPU-resident experts. `Q4_K` and `IQ4_NL` are the two 4-bit formats used for routed-expert matrices. Other components retain the formats listed individually. `F32` and `BF16` store floating-point values at 32 and 16 bits respectively. `GDN` denotes Gated DeltaNet attention; `PLE` labels the n-gram lookup components. Hyper-connections combine the model's residual streams, and the indexer selects positions used by sparse attention.
+The prediction decoding strategy avoids the waste caused by using a high-level model when it is unnecessary, relying on the predictions of the speculative MTP model. The iterative steps that lead the model to generate responses are described below:
+
+1. **Initialization:** after prefill, the target produces the first response token, which serves as the input state for the MTP draft model.
+
+2. **Draft-model iteration:** the draft, conditioned on the target state, continues by generating a chain of N tokens, which it then passes to the target for verification. Verification takes place within the GPU, where X/512 experts reside for each layer, selected according to the hotlist (see below). The target router selects 10 experts for each layer, checking which ones are present on the GPU. The experts may be absent; in that case, verification may stop or continue with fewer experts, as specified below. Verification can have three outcomes and corresponding developments:
+
+   - **Case A:** the draft model got all N tokens right.
+
+     - The tokens are confirmed in the response.
+
+     - The target generates the bonus token N+1 on the GPU, which also serves as the new input state for the draft’s new input chain.
+
+     - The draft continues to generate the next N′ tokens, where N′ may be changed relative to N according to the positive progression and the time assessment (see below).
+
+   - **Case B:** for a given token, the verifier did not have enough experts to cover up to 90% of the normalized weights that the router assigns to each expert (expert handoff condition).
+
+     - The preceding confirmed tokens are preserved.
+
+     - That particular token is generated by the entire target MoE on the CPU, and also serves as the new input state for the draft’s new input chain.
+
+     - The draft continues to generate the next N′ = N tokens (the draft token window remains unchanged).
+
+   - **Case C:** for a given token, the verifier has enough experts to cover up to 90% of the normalized weights that the router assigns to each expert, but verification is not satisfied (see the verification criteria below).
+
+     - That particular token is replaced by the one generated by the target MoE on the GPU, already used for verification. This token also serves as the new input state for the draft’s new input chain.
+
+     - The draft continues to generate the next N′ tokens, where N′ may be changed relative to N according to the negative progression and the time assessment (see below).
+
+   In the limiting case where the rejected token is the first one, the length of the next chain is reset to the minimum value N=4.
+
+## Qwen3.8-Flash-Next-Nebula model data
+
+- 125 billion language parameters
+
+- about 6 billion activated per token plus 51 billion in the n-gram table
+
+- 4 billion MTP parameters.
+
+- Shared vocabulary of 248320 tokens.
+
+- Components held on the GPU, quantized as shown in the table (NB: the weights in GiB/GB refer to the reference configuration with X=27 experts per layer resident in VRAM and X+Y=27+485=512 experts per layer resident in RAM):
 
 | Component | Format | GPU GiB | GPU GB |
 | --- | --- | --- | --- |
-| Target and MTP embeddings | Q4_K | 0.333 | 0.358 |
+| Target and MTP embedding | Q4_K | 0.333 | 0.358 |
 | Target and MTP output head | Q4_K | 0.333 | 0.358 |
-| Target resident experts: gate | Q4_K | 1.112 | 1.194 |
-| Target resident experts: up | Q4_K | 1.112 | 1.194 |
-| Target resident experts: down | IQ4_NL | 1.112 | 1.194 |
+| Target expert cache: gate | Q4_K | 1.112 | 1.194 |
+| Target expert cache: up | Q4_K | 1.112 | 1.194 |
+| Target expert cache: down | IQ4_NL | 1.112 | 1.194 |
 | Target: hyper-connection | F32 + IQ4_NL + Q4_K | 0.351 | 0.377 |
 | Target: MoE router | F32 | 0.234 | 0.252 |
-| Target: shared-expert gate | F32 | 0.000458 | 0.000492 |
+| Target: shared expert gate | F32 | 0.000458 | 0.000492 |
 | GDN: convolution, norms and scales | F32 | 0.006 | 0.006 |
 | GDN: alpha and beta projections | F32 | 0.033 | 0.035 |
 | PLE: convolution and norms | F32 | 0.000267 | 0.000287 |
 | Target: attention norms | F32 | 0.000023 | 0.000025 |
-| Target: indexer and norms | BF16 + F32 | 0.037 | 0.039 |
+| Target: indexer and its norms | BF16 + F32 | 0.037 | 0.039 |
 | GDN: gate, 36 layers | Q4_K | 0.297 | 0.319 |
 | GDN: QKV projection, 36 layers | Q4_K | 0.494 | 0.531 |
 | Target: shared experts | IQ4_NL + Q4_K | 0.124 | 0.133 |
 | GDN: output projection | Q4_K | 0.297 | 0.319 |
 | PLE: key and value projections | Q4_K | 0.017 | 0.018 |
-| Target: attention K | Q4_K | 0.008 | 0.009 |
-| Target: attention output | Q4_K | 0.099 | 0.106 |
-| Target: attention Q | Q4_K | 0.198 | 0.212 |
-| Target: attention V | Q4_K | 0.008 | 0.009 |
-| MTP: attention K | Q4_K | 0.000687 | 0.000737 |
+| Target: K attention | Q4_K | 0.008 | 0.009 |
+| Target: output attention | Q4_K | 0.099 | 0.106 |
+| Target: Q attention | Q4_K | 0.198 | 0.212 |
+| Target: V attention | Q4_K | 0.008 | 0.009 |
+| MTP: K attention | Q4_K | 0.000687 | 0.000737 |
 | MTP: attention norms | F32 | 0.000002 | 0.000002 |
-| MTP: attention output | Q4_K | 0.008 | 0.009 |
-| MTP: attention Q | Q4_K | 0.016 | 0.018 |
-| MTP: attention V | Q6_K | 0.001 | 0.001 |
+| MTP: output attention | Q4_K | 0.008 | 0.009 |
+| MTP: Q attention | Q4_K | 0.016 | 0.018 |
+| MTP: V attention | Q6_K | 0.001 | 0.001 |
 | MTP: shared experts | IQ4_NL + Q4_K | 0.003 | 0.003 |
 | MTP: 512 experts, gate | Q4_K | 0.439 | 0.472 |
 | MTP: MoE router | F32 | 0.005 | 0.005 |
-| MTP: shared-expert gate | F32 | 0.000010 | 0.000010 |
+| MTP: shared expert gate | F32 | 0.000010 | 0.000010 |
 | MTP: 512 experts, up | Q4_K | 0.439 | 0.472 |
 | MTP: hyper-connection | F32 + Q4_K + Q5_0 + Q6_K | 0.012 | 0.013 |
-| MTP: indexer and norms | BF16 + F32 | 0.003 | 0.003 |
+| MTP: indexer and its norms | BF16 + F32 | 0.003 | 0.003 |
 | MTP: input projection and norms | F32 + Q4_K | 0.007 | 0.007 |
 | MTP: 512 experts, down | IQ4_NL | 0.439 | 0.472 |
-|  | Total | 7.581 | 8.140 |
+|  | TOTAL | 7.581 | 8.140 |
 
-Additional VRAM holds the context state, temporary work buffers and CUDA Graph resources. The RAM allocations for the reference configuration are:
+- Components held on the CPU, quantized as shown in the table:
 
 | Component | Format | RAM GiB |
 | --- | --- | --- |
-| Target experts in RAM | Q4_K / IQ4_NL | 63.281 |
+| Target experts in RAM | (see above) | 63.281 |
 | PLE table in RAM | (IQ4_NL) | 26.822 |
-|  | Total | 90.103 |
+|  | TOTAL | 90.103 |
 | Main CPU buffers |  | 0.292 |
-
-The installer downloads the pinned source weights from Hugging Face and applies Nebula's quantization recipe. The resulting quantizations are stored in the prepared weight files. The repository contains the engine, recipe and hotlist; model downloads are managed by the installer.
 
 ### The hotlist
 
-Following ds4's profiling approach, the expert analysis campaign covered **120 requests in 12 subject areas**, with 65,938 input tokens and 43,791 output tokens. Routing traces are available for 43,764 response tokens. These record which experts each layer selected and the weights assigned by its router.
+During development of the engine, following the example of ds4, a campaign analyzing the model’s responses was carried out. The campaign collected 120 requests in 12 domains, with 65,938 input tokens and 43,791 tokens emitted in response. Routing is available for 43,764 response tokens. This made it possible to map, for each layer, the experts’ activation frequency and the weights assigned to them by the router. The ranking was drawn up by activation frequency and, for equal scores, by the assigned weight. This ranking is used to identify the X experts to reside in VRAM and the 512-X-Y experts to reside on the SSD (where Y = experts residing exclusively in RAM).
 
-The complete ranking contains all 512 experts for each of the 48 layers. It sorts by activation count, then by accumulated router weight to break ties, and finally by expert ID. The leading X experts stay in VRAM. The leading H experts stay in RAM, including copies of those X GPU experts; the remaining **512 − H** stay on SSD. Equivalently, when Y denotes RAM-only experts, **H = X + Y**.
+### How verification takes place
 
-### Verification levels
+The verifier evaluates the ID proposed by the draft using the target’s logits. This takes place according to criteria that vary with the accuracy required of the response, which the user can set on a graduated scale from 1 to 3 as follows:
 
-The verifier compares the proposed token with the target's scores. Its *greedy* choice is the token with the highest score. For relaxed verification, **R** is the probability assigned by the target to the draft token divided by the probability of its preferred token, at the same response position.
+**3 — Strict.** Accepts only the token identical to the configured target’s greedy choice. It is the default reference for technical contexts, mathematics, coding and complex reasoning.
 
-| Level | Acceptance rule | Use |
-|:--:|---|---|
-| **3 — Strict** | The draft token must equal the target's greedy choice. | Default for technical work, mathematics, coding and complex reasoning. |
-| **2 — Limited tolerance** | A different token may be accepted when it is in the target's top three and R ≥ 0.80. At most one such proposal is accepted per block. | Evaluate the speed and response trade-off on the intended workload. The final comparison is reported below. |
-| **1 — Broad tolerance** | A different token may be accepted when it is in the target's top ten and R ≥ 0.20. At most four such proposals are accepted per block. | The earlier development comparison found the quality cost too high for the speed gained. |
+**2 — Limited tolerance.** Allows only one non-greedy proposal per block, within the target’s top three tokens and with R ≥ 0.80. It is an experimental option for assessing the trade-off between speed and response variation; it should be compared with level 3 on one’s own tasks. The measured gain depends on the workload; the results of the final campaign are reported in the section dedicated to benchmarks.
 
-### Adaptive draft length
+**1 — Wide tolerance.** Allows up to four non-greedy proposals per block, provided they are within the target’s top ten and have R ≥ 0.20. An option included for completeness, always discouraged because the gain in speed does not offset the loss of intelligence.
 
-Every response starts with **N = 4**, and the controller keeps the window between **4 and 16 proposals**. A baseline rule increases N after fully accepted chains:
+### Dynamic variation of the draft token window.
 
-```text
-N′ = N + ΔN
-Consecutive acceptance increments: 0, 1, 1, 2, 3, 5
-```
+There is a basic rule, founded on reward/punishment, that proposes a change to the draft token window (changing the number N of tokens that the draft must generate). The proposal is then assessed in terms of its time benefit.
 
-Rejections reduce the baseline:
+Basic rule: each response starts from N=4 and the controller keeps the window between 4 and 16 proposals. The basic rule rewards fully accepted blocks with increments:
 
-```text
-N′ = N − ΔN
-Consecutive rejection decrements: 2, 4, 6
-```
+$$
+N' = N + \Delta N
+$$
 
-Rejecting the first proposal resets the baseline to N = 4. The controller also records the time spent proposing, verifying, saving and restoring state, and realigning MTP. Once it has observations from eight chains, it can move the proposed window by up to two positions when its measured history predicts better useful-token throughput. A 5% improvement threshold reduces reactions to timing noise. The cost of an expert handoff is included in the target's execution time.
+With N taking increasing values in the case of consecutive acceptances, according to the progression:
+
+$$
+\Delta N = 0,1,1,2,3,5
+$$
+
+Whereas in the case of rejections:
+
+$$
+N' = N - \Delta N
+$$
+
+With N taking increasing values in the case of consecutive rejections, according to the progression:
+
+$$
+\Delta N = 2,4,6
+$$
+
+This basic rule may be altered where the model, implemented with an algorithm that stores the history of generation, verification, saving, recovery and MTP realignment speeds for entire blocks of N tokens, understands that it is more advantageous to alter N′ by +2/−2 when this makes it possible to achieve (according to the history) higher token/s speeds than those achievable (again according to the history) with the number N′ given by the basic rule. The algorithm that corrects the basic rule requires a generation history of eight token chains.
 
 ## Benchmark results
 
-The **11–12 September 2026 campaign** compared level 3 with level 2 on the RTX 4070 Ti / i9-9940X / 128 GB reference machine. Both levels used a 24,576-token context, a 2,048-token prefill batch, 27 GPU experts per layer, Q4_K/IQ4_NL routed experts, n-gram embeddings in RAM and 14 CPU workers. CPU MoE handoff, the 10% missing-expert threshold, CUDA Graph and intermediate-state recovery were active. Thinking was off and the MTP window varied from 4 to 16. The weights stayed loaded throughout the campaign.
+Campaign of September 11–12, 2026: comparison between level 3 (strict greedy) and level 2 (the target’s top three tokens, probability ratio of at least 0.80 and at most one non-greedy proposal accepted per block). The measurements concern the official configuration on the 12 GB RTX 4070 Ti, i9-9940X CPU and 128 GB of RAM.
+
+Configuration kept unchanged: context of 24,576 tokens, prefill of 2,048, 27 resident experts per layer, Q4_K/IQ4_NL expert matrices, N-gram in RAM, 14 CPU threads, layer MoE on the CPU in the event of handoff, 10% threshold for omitting marginal experts, CUDA Graph and intermediate state recovery enabled. Thinking disabled; adaptive MTP window from 4 to 16. The weights remained loaded during the tests.
 
 ### Protocol
 
-For speed, we used **NVIDIA GenAI-Perf 0.0.16 with Perf Analyzer 2.60.0**. We ran 18 requests, one at a time, using inputs of 512, 1,024 and 2,048 tokens and outputs of 128 tokens: three repetitions for each input length and verification level.
+With NVIDIA GenAI-Perf 0.0.16 and Perf Analyzer 2.60.0, we ran 18 sequential requests: inputs of 512/1,024/2,048 tokens, responses of 128, three repetitions per length and level.
 
-For instruction following, **IFEval** covered 40 questions selected from 541, spanning 25 constraint types. The prompt-level score requires every constraint in a question to be satisfied; the instruction-level score evaluates each constraint separately. The *strict* evaluation applies the checks directly, while *loose* tolerates certain differences in presentation.
+IFEval evaluates 40 questions and 25 types of constraint. The “prompt” score requires all of them to be met; the instruction score evaluates them separately. “Strict” is rigorous, “loose” tolerates differences in presentation.
 
-For **LiveBench**, we selected 30 questions from the 25 November 2024 dataset: six each in coding, mathematics, reasoning, language and data analysis, spanning 15 task types. The official graders compare answers against references and execute generated programs. Some tasks award partial credit.
+LiveBench includes 30 questions from November 25, 2024, six each for programming, mathematics, reasoning, language and data analysis. The official graders check responses and programs, also awarding partial scores.
 
-The 70 quality questions were selected before testing and submitted to both levels in alternating order. Each question received one answer per level, capped at 2,048 tokens: **140 graded answers**. The campaign took **3.95 hours**, including preparation and checks.
+The 70 questions, chosen before the tests, produced 140 evaluated responses, alternating the levels, within 2,048 tokens. The campaign lasted 3.95 hours.
 
 ### Performance
 
-| Input (tokens) | Level | Native prefill (tokens/s) | Native generation (tokens/s) | GenAI generation (tokens/s) | First token (s, GenAI) |
+| Input (tokens) | Lvl. | Native prefill (token/s) | Native generation (token/s) | GenAI generation (token/s) | First token (s, GenAI) |
 | --- | --- | --- | --- | --- | --- |
 | 512 | 3 | 20.97 | 6.84 | 6.89 | 25.11 |
 | 512 | 2 | 20.86 | 7.66 | 7.69 | 25.19 |
-| 1024 | 2 | 21.18 | 6.87 | 6.87 | 49.01 |
-| 1024 | 3 | 21.05 | 6.82 | 6.16 | 49.25 |
-| 2048 | 3 | 18.49 | 8.04 | 10.14 | 113.94 |
-| 2048 | 2 | 19.18 | 8.22 | 8.23 | 107.45 |
+| 1,024 | 2 | 21.18 | 6.87 | 6.87 | 49.01 |
+| 1,024 | 3 | 21.05 | 6.82 | 6.16 | 49.25 |
+| 2,048 | 3 | 18.49 | 8.04 | 10.14 | 113.94 |
+| 2,048 | 2 | 19.18 | 8.22 | 8.23 | 107.45 |
 
-Across the 18 NVIDIA tests, average generation speed measured inside Nebula rises from **7.19 tokens/s at level 3 to 7.54 at level 2**, an increase of **4.93%**.
+In the NVIDIA tests, moving from level 3 to level 2, generation increases from 7.19 to 7.54 token/s (+4.93%).
 
-Each row combines three requests. Native speeds divide the total tokens by the total time of the phase. Prefill covers input processing, the chat template and the first output token; decoding generates the subsequent tokens. The GenAI column reports the tool's average speed while receiving responses. Time to first token is the wait before the response starts arriving.
+Each row summarizes three tests. Nebula measures tokens/processing time; GenAI measures response reception. Prefill includes the input and first token; generation follows. Time to first token measures the wait.
 
-Nebula and NVIDIA therefore observe different processing and reception intervals. In two requests, recorded reception delays account for the most visible differences between the columns. Both measurements and those requests are retained in the results.
+The differences between processing and reception explain the discrepancies in two requests, retained in the results.
 
-| Level | NVIDIA tests native range (tokens/s) | NVIDIA tests native average (tokens/s) | Quality tests native range (tokens/s) | Quality tests native average (tokens/s) |
+| Level | NVIDIA tests, native min–max (token/s) | NVIDIA tests, native average (token/s) | Quality tests, native min–max (token/s) | Quality, native average (token/s) |
 | --- | --- | --- | --- | --- |
 | 3 | 6.36–8.49 | 7.19 | 3.61–13.70 | 8.87 |
 | 2 | 6.71–8.51 | 7.54 | 3.46–14.06 | 9.07 |
 
-In the quality tests, average generation reaches **8.87 tokens/s at level 3** and **9.07 at level 2**. These responses can extend to 2,048 tokens; their content and length affect throughput and draft acceptance. Average time to process the question and finish the response is 71.84 seconds at level 3 and 69.62 at level 2, with average response lengths of 509.9 and 500.2 tokens respectively.
+In the quality tests, the averages are 8.87 and 9.07 token/s: content and length influence speed and draft acceptances.
 
-The introduction's ranges cover all 158 measured responses: **8.43–22.21 tokens/s for prefill** and **3.46–14.06 for generation**. Each observation is a per-response average. Memory sampled every 30 seconds reached 11.08 GiB on the GPU and 90.78 GiB of resident RAM in the model process. The expert-weight upload counter remained at zero during the responses.
+At levels 3 and 2, average responses of 509.9 and 500.2 tokens take 71.84 and 69.62 seconds overall.
+
+The 158 responses provide the ranges in the introduction: prefill 8.43–22.21 and generation 3.46–14.06 token/s, measured per response.
+
+Maximum memory detected every 30 seconds: GPU 11.08 GiB, process 90.78 GiB RAM. No expert weight transfers to the GPU.
 
 ### Response quality
 
-| Measure on the selected sample | Level 3 | Level 2 |
+| Sample measurement | Level 3 | Level 2 |
 | --- | --- | --- |
 | IFEval: prompt strict | 87.50% | 90.00% |
 | IFEval: prompt loose | 90.00% | 90.00% |
-| IFEval: instruction strict | 91.67% | 93.33% |
-| IFEval: instruction loose | 93.33% | 93.33% |
-| LiveBench: Coding (n=6) | 83.33% | 83.33% |
+| IFEval: instructions strict | 91.67% | 93.33% |
+| IFEval: instructions loose | 93.33% | 93.33% |
+| LiveBench: Programming (n=6) | 83.33% | 83.33% |
 | LiveBench: Data analysis (n=6) | 82.17% | 82.17% |
 | LiveBench: Language (n=6) | 33.94% | 35.48% |
 | LiveBench: Mathematics (n=6) | 36.55% | 53.21% |
 | LiveBench: Reasoning (n=6) | 50.00% | 50.00% |
-| LiveBench: five-area average | 57.20% | 60.84% |
+| LiveBench: average of the five areas | 57.20% | 60.84% |
 
-Across the 70 questions, level 2 scores higher in three cases and level 3 in one; 66 have the same score. The response text is identical in 18 pairs. The 2,048-token cap was reached by eight level-3 answers and seven level-2 answers, mainly in mathematics and reasoning. These responses are included as produced within that cap.
+Out of 70 questions: level 2 better in 3 cases, level 3 in 1; 66 ties, 18 identical responses.
 
-### Evaluation records
+The 2,048-token limit affected 8 responses at level 3 and 7 at level 2, included in the scores.
 
-The results describe the configuration above, with one request at a time and thinking off. Identical questions and conditions allow a direct comparison between the levels on this selected sample.
+### Test checking and documentation
 
-We checked the graders against examples with known results and verified that empty extracted programs receive zero points. Generated programs ran in an isolated environment. [Benchmark documentation](docs/BENCHMARKS.md) and [measurement data](docs/evidence/) retain the selected question IDs, scores, timing measurements, source revisions and aggregation definitions.
+The comparison keeps the questions and conditions identical: one request at a time, thinking disabled.
 
-Official references: [NVIDIA GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer/tree/main/genai-perf), [IFEval](https://github.com/google-research/google-research/tree/master/instruction_following_eval), [LiveBench](https://github.com/LiveBench/LiveBench).
+Graders checked against known results, empty programming responses scored zero, programs run in isolation. Checks and corrections are archived.
 
-## Installation
+The `work/qwen/standard_bench_20260911` archive preserves the protocol, revisions and checksums, original questions, all responses, timing traces, judgments and NVIDIA logs. `paired_results.md` presents the question-by-question comparison with links to the complete data; `summary.json` contains the reproducible aggregates and `aggregate.py` recalculates them. The initial integration tests are preserved but excluded from the tables.
 
-Nebula runs its C/CUDA engine in a dedicated 64-bit Ubuntu environment under **WSL2 on Windows**. The chat interface opens in a browser.
+Official references: [NVIDIA GenAI-Perf](https://github.com/triton-inference-server/perf_analyzer/tree/main/genai-perf) · [IFEval](https://github.com/google-research/google-research/tree/master/instruction_following_eval) · [LiveBench](https://github.com/LiveBench/LiveBench). The exact revisions and those of the data are recorded in the archive.
 
-### Requirements
+## How to install it
 
-- Windows 10 build 19045 or later, x86-64 CPU and enabled virtualization.
-- NVIDIA GPU with at least **8 GB VRAM** and Windows driver **570.65 or later**.
-- At least **32 GB RAM**.
-- Approximately **151 GiB free on SSD** during installation. The final prepared weights occupy approximately **94.35 GiB**; temporary preparation space and the execution environment account for the installation peak.
-- Internet access during setup. Subsequent chat requests run on the computer.
+Nebula runs the C/CUDA engine in a 64-bit Linux environment. The tested configuration uses Ubuntu on Windows through WSL2. The WebUI is used from the browser.
 
-### Automatic setup
+### Minimum requirements
 
-Download **[NebulaSetup.exe](https://github.com/IvanPanzera/nebula/releases/download/v0.1.0-rc.1/NebulaSetup.exe)** and accept the Windows administrator prompt. The installer displays progress and completes the following steps. It requests intervention when a prerequisite needs attention, resources need to be released, an active WSL session must close or Windows needs to restart.
+The minimum requirements are 64-bit Windows on an x86-64 processor, an NVIDIA GPU with at least 8 GB of VRAM, 32 GB of RAM and about 151 GiB free on an SSD for installation. This space is the same for all 16 configurations: it includes the temporary peak during weight preparation and the execution environment. The final weights alone occupy about 94.35 GiB. An Internet connection is required during installation; subsequent use of the chat takes place on the computer.
 
-1. Checks Windows, CPU architecture, virtualization and the NVIDIA driver.
-2. Detects physical RAM, GPU VRAM, CPU cores and logical processors. If several NVIDIA GPUs are present, it selects the single GPU with the most VRAM.
-3. Selects one of the 16 approved hardware profiles. RAM and VRAM are rounded down independently: for example, 20 GB VRAM and 80 GB RAM select the 16 GB / 64 GB profile.
+### Installation
 
-#### GPU allocation
+Installation starts by running [NebulaSetup.exe](https://github.com/IvanPanzera/nebula/releases/download/v0.1.0-rc.1/NebulaSetup.exe) and approving the Windows administrator request. The executable automatically completes the following steps, showing progress. It requires intervention only when resources need to be freed, a missing requirement needs to be corrected, an active WSL session needs to be closed or Windows needs to be restarted.
 
-| VRAM tier (GB) | GPU experts per layer | Prefill (tokens) | Context (tokens) | Planned free VRAM (GB) |
-| --- | --- | --- | --- | --- |
-| 8 | 11 | 1024 | 8192 | 1 |
-| 12 | 27 | 2048 | 24576 | 2 |
-| 16 | 34 | 4096 | 49152 | 3.5 |
-| 24 | 54 | 8182 | 98304 | 5 |
+The installer:
 
-#### RAM and SSD allocation
+- checks the Windows version, the x86-64 processor, virtualization and the NVIDIA driver. It requires Windows 10 build 19045 or later and an NVIDIA driver 570.65 or later; it reports any prerequisites that need updating;
 
-GPU counts are per layer. The RAM column shows **RAM-only experts + CPU copies of GPU experts**, matching the allocation used during CPU MoE handoff.
+- detects the installed physical RAM, GPU VRAM, physical cores and CPU threads. If multiple NVIDIA GPUs are present, it chooses a single GPU with the most VRAM, without adding together the memory of the different cards;
 
-| VRAM tier (GB) | RAM tier (GB) | RAM-only + GPU copies per layer | SSD experts per layer | N-gram table | Estimated free RAM (GB) |
-| --- | --- | --- | --- | --- | --- |
-| 8 | 32 | 141 + 11 | 360 | SSD | 8 |
-| 8 | 64 | 400 + 11 | 101 | SSD | 8 |
-| 8 | 96 | 501 + 11 | 0 | SSD | 27 |
-| 8 | 128 | 501 + 11 | 0 | RAM | 33 |
-| 12 | 32 | 124 + 27 | 361 | SSD | 8 |
-| 12 | 64 | 383 + 27 | 102 | SSD | 8 |
-| 12 | 96 | 485 + 27 | 0 | SSD | 27 |
-| 12 | 128 | 485 + 27 | 0 | RAM | 33 |
-| 16 | 32 | 114 + 34 | 364 | SSD | 8 |
-| 16 | 64 | 372 + 34 | 106 | SSD | 8 |
-| 16 | 96 | 478 + 34 | 0 | SSD | 27 |
-| 16 | 128 | 478 + 34 | 0 | RAM | 33 |
-| 24 | 32 | 90 + 54 | 368 | SSD | 8 |
-| 24 | 64 | 348 + 54 | 110 | SSD | 8 |
-| 24 | 96 | 458 + 54 | 0 | SSD | 27 |
-| 24 | 128 | 458 + 54 | 0 | RAM | 33 |
+- selects one of the 16 configurations in the table. RAM and VRAM are considered separately and rounded down: for example, 20 GB of VRAM and 80 GB of RAM use the 16 GB and 64 GB profile (see table);
 
-The reserves are the profile's planned headroom. At a fixed RAM tier, a larger GPU profile also needs larger host buffers; this slightly increases the expert count placed on SSD. The 24 GB profile uses the approved prefill value of **8,182**.
+<table>
+<thead>
+<tr>
+<th>VRAM</th>
+<th>No. of GPU experts</th>
+<th>Max prefill</th>
+<th>Max context</th>
+<th>Free VRAM</th>
+<th>RAM</th>
+<th>No. of CPU experts</th>
+<th>No. of SSD experts</th>
+<th>N-Gram table</th>
+<th>Free RAM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td rowspan="4">8</td>
+<td rowspan="4">11</td>
+<td rowspan="4">1024</td>
+<td rowspan="4">8192</td>
+<td rowspan="4">About 1 GB</td>
+<td>32</td>
+<td>141(+11)</td>
+<td>360</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>64</td>
+<td>400(+11)</td>
+<td>101</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>96</td>
+<td>501(+11)</td>
+<td>0</td>
+<td>On SSD</td>
+<td>About 27 GB</td>
+</tr>
+<tr>
+<td>128</td>
+<td>501(+11)</td>
+<td>0</td>
+<td>On CPU</td>
+<td>About 33 GB</td>
+</tr>
+<tr>
+<td rowspan="4">12</td>
+<td rowspan="4">27</td>
+<td rowspan="4">2048</td>
+<td rowspan="4">24576</td>
+<td rowspan="4">About 2 GB</td>
+<td>32</td>
+<td>124(+27)</td>
+<td>361</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>64</td>
+<td>383(+27)</td>
+<td>102</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>96</td>
+<td>485(+27)</td>
+<td>0</td>
+<td>On SSD</td>
+<td>About 27 GB</td>
+</tr>
+<tr>
+<td>128</td>
+<td>485(+27)</td>
+<td>0</td>
+<td>On CPU</td>
+<td>About 33 GB</td>
+</tr>
+<tr>
+<td rowspan="4">16</td>
+<td rowspan="4">34</td>
+<td rowspan="4">4096</td>
+<td rowspan="4">49152</td>
+<td rowspan="4">About 3.5 GB</td>
+<td>32</td>
+<td>114(+34)</td>
+<td>364</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>64</td>
+<td>372(+34)</td>
+<td>106</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>96</td>
+<td>478(+34)</td>
+<td>0</td>
+<td>On SSD</td>
+<td>About 27 GB</td>
+</tr>
+<tr>
+<td>128</td>
+<td>478(+34)</td>
+<td>0</td>
+<td>On CPU</td>
+<td>About 33 GB</td>
+</tr>
+<tr>
+<td rowspan="4">24</td>
+<td rowspan="4">54</td>
+<td rowspan="4">8182</td>
+<td rowspan="4">98304</td>
+<td rowspan="4">About 5 GB</td>
+<td>32</td>
+<td>90(+54)</td>
+<td>368</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>64</td>
+<td>348(+54)</td>
+<td>110</td>
+<td>On SSD</td>
+<td>About 8 GB</td>
+</tr>
+<tr>
+<td>96</td>
+<td>458(+54)</td>
+<td>0</td>
+<td>On SSD</td>
+<td>About 27 GB</td>
+</tr>
+<tr>
+<td>128</td>
+<td>458(+54)</td>
+<td>0</td>
+<td>On CPU</td>
+<td>About 33 GB</td>
+</tr>
+</tbody>
+</table>
 
-4. Checks free SSD space, RAM and VRAM and reports any missing amount. Temporary use by other applications is handled by asking for resources to be released while keeping the selected hardware tier.
-5. Selects an internal NTFS SSD for the installation folder, such as `C:\Nebula`. It prefers the system SSD when capacity permits, otherwise the internal SSD with the most free space, and checks the system drive's own requirements.
-6. Enables or verifies WSL2 and Windows virtualization components. If a restart is required, setup resumes at the next Windows sign-in.
-7. Sets WSL's memory ceiling with the approved Windows reserve and disables WSL swap so explicit RAM/SSD placement governs the model. It preserves unrelated `.wslconfig` settings and backs up the previous file. Applying a change to shared WSL settings waits for active sessions to close.
-8. Downloads and verifies Ubuntu, then creates the dedicated **Nebula** WSL distribution, its Linux account and application directories automatically.
-9. Installs Python, a dedicated Python environment, the required libraries, build tools and CUDA components. The WebUI uses Nebula's included Python HTTP server.
-10. Builds for the detected GPU and prepares AVX-512, AVX2 and scalar CPU implementations. At startup, the engine selects the supported instruction path and uses the available physical cores, up to 28 workers.
-11. Downloads the pinned model revision from Hugging Face, checks file sizes and SHA256 integrity hashes, and prepares Nebula's official quantizations. It processes one weight shard at a time and removes each temporary source after verifying its replacement.
-12. Generates the GPU hotlist and applies the chosen expert placement. The top X experts per layer stay in GPU memory; the top H stay in RAM, including copies of X; ranks H+1 through 512 remain on SSD and enter bounded temporary RAM buffers when needed.
-13. Applies context and prefill limits. The n-gram table stays on SSD for 32, 64 and 96 GB RAM profiles and in RAM for the 128 GB profile. CLI and WebUI use the same saved settings.
-14. Runs CPU/CUDA numerical checks and verifies the tokenizer, hotlist, weight index, formats and component sizes. It checks available memory again before finishing. Full model loading starts with the first chat request.
-15. Creates **Nebula** desktop and Start-menu shortcuts and **Stop Nebula** in the Start menu. Setup logs are saved in `%ProgramData%\NebulaSetup`; verified model parts and partial downloads are reused after an interrupted installation.
+Note: with equal RAM, increasing VRAM slightly increases the number of experts on the SSD because of the increased size of the buffers in RAM.
 
-The installer is distributed as a release candidate. Its completed checks and clean-machine validation plan are documented in [Installer validation](docs/INSTALLER-VALIDATION.md).
+- checks free SSD space and available RAM and VRAM. When a resource is insufficient, it indicates how many GiB are missing and asks for installation to be repeated after freeing them. Temporary usage caused by other applications does not change the selected hardware profile;
 
-## Starting Nebula
+- identifies an internal SSD with an NTFS volume for the Nebula folder. It prefers the system drive if space is sufficient; otherwise, it chooses the internal SSD with the most free space. The path will be, for example, `C:\Nebula`. It also checks the space needed on the system drive when the model is placed on another SSD;
 
-Open **Nebula** from the desktop or Start menu. The shortcut starts the server in its dedicated WSL environment and opens `http://localhost:8090`. If the service is already running, it opens the existing interface.
+- enables or checks WSL2 and the Windows virtualization components. If a restart is needed, it prepares installation to resume at the next Windows login, without forcing an immediate restart;
 
-Choose **New chat**, enter a message and send it. The first request loads the selected components into RAM and VRAM while the WebUI shows progress. The loaded model then stays available for later requests and new conversations. Closing the browser tab leaves the service running; open Nebula again to return to the chat.
+- configures the WSL RAM limit, leaving the planned reserve for Windows, and disables WSL swap so that distribution between RAM and SSD is governed by the engine’s explicit streaming. It preserves the other settings and a copy of the previous `.wslconfig` file; if a change needs to be applied while other WSL sessions are active, it first asks for them to be closed;
 
-To stop the service and release its memory, choose **Stop Nebula** in the Start menu. This stops Nebula's dedicated WSL distribution. The next launch reloads the weights, and conversations saved in the browser remain available.
+- downloads and verifies the Ubuntu image and creates a dedicated WSL2 environment called Nebula. It automatically prepares the Linux user and program folders, without asking for an account to be created or a password to be set;
 
-If another application occupies port 8090, close it before starting Nebula. Startup details are recorded in `webui-error.log` in the installation folder. Resource messages state how much RAM or VRAM to release before retrying.
+- installs or checks Python and creates a dedicated Python environment with the required library versions. It installs the build tools and necessary CUDA components. It does not require Python on Windows or Apache: the WebUI HTTP server is included in Nebula’s Python code;
 
-## Future development
+- compiles the engine for the detected GPU and prepares the AVX-512, AVX2 and scalar CPU paths. The engine selects the one supported by the processor and sets the number of threads according to the available physical cores, up to a limit of 28;
 
-- Maintenance and improvements based on reproducible reports containing hardware, revision, configuration and observed behavior.
-- CPU/GPU allocation and context tuning on additional hardware configurations.
-- Extended measurements with different prefill and context lengths, including 16 GB and 24 GB GPUs.
-- Support for AMD, Intel and Apple GPUs.
-- Evaluation of larger MoE models as available VRAM increases.
-- Fresh Windows installation validation and release hardening.
+- downloads the weights from the planned revision, checking their sizes and SHA256 checksums. It prepares the official quantizations and combines the components into the files used by the engine. It processes one block of files at a time and deletes temporary source copies only after verifying the result;
 
-## Credits and license
+- generates the hotlist and applies the planned distribution for each layer: the top X experts in the ranking remain on the GPU; the top H remain in RAM, including copies of those X; experts from position H+1 to 512 remain on the SSD. These are read into a limited temporary buffer when needed;
 
-Thank you to the [Qwen team](https://huggingface.co/Qwen/Qwen3.8-Flash-Next) for the model, [Unsloth](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF) for the GGUF distribution, and the authors of [llama.cpp and GGML](https://github.com/ggml-org/llama.cpp) for quantization formats, tools and reference implementations.
+- sets context and prefill according to the table and places the N-gram on the SSD in profiles with 32, 64 and 96 GB of RAM, or in RAM in the 128 GB profile. It saves the settings so that CLI and WebUI use the same configuration;
 
-Nebula uses AI assistance for code writing and review, under human direction and verification. The project is independent and preserves its upstream credits and license notices. Engine code is distributed under the [MIT license](LICENSE); the model and tokenizer retain the [Qwen Community License](licenses/QWEN-LICENSE.txt). [Third-party notices](THIRD_PARTY.md) record the pinned sources and their terms.
+- runs numerical checks on the CPU and CUDA paths and verifies the tokenizer, hotlist, index, formats and sizes of the model components. It checks available memory again before declaring installation complete; full loading of the weights takes place at the first chat request;
 
-Special thanks to [antirez](https://github.com/antirez) for ds4 and his educational work on YouTube, which sparked my interest in LLMs and the challenges of local inference.
+- creates the Nebula shortcut on the desktop and in the Start menu, as well as the Stop Nebula command in the Start menu. It keeps a detailed log in `%ProgramData%\NebulaSetup`. Partial downloads and already verified model files are reused when installation is repeated after an interruption.
+
+## How to start it
+
+After installation, open Nebula using the desktop shortcut or the Start menu. Ordinary use does not require administrator privileges, opening a terminal or starting Ubuntu manually.
+
+The shortcut starts the server in the dedicated WSL environment and opens the WebUI in the browser at <http://localhost:8090>. If Nebula is already running, it reopens the same interface without starting a second engine.
+
+Create a conversation with New chat, write the message and send it. On the first request, the engine loads the planned components into RAM and VRAM; the WebUI shows the loading phase. This initial time is separate from response generation speed.
+
+Once loading is complete, the model remains available for subsequent requests and new chats. Closing only the browser tab does not stop the engine: you can return to the chat by opening Nebula again.
+
+To stop Nebula and free the memory used by the model, run Stop Nebula from the Start menu. The command stops only the WSL environment dedicated to Nebula. After a shutdown or computer restart, the next use requires the weights to be loaded again; chats saved in the browser remain available.
+
+If startup reports that port 8090 is already occupied by another application, close that application and reopen Nebula. In the event of a startup error, consult `webui-error.log` in the installation folder; if RAM or VRAM is insufficient, free the indicated amount and try again.
+
+## Future developments
+
+- Maintenance and improvements guided by reproducible user reports, specifying hardware, revision, configuration and observed behavior. Requests for new features will be assessed based on usefulness, cost and necessary checks.
+
+- Implement the architecture for AMD, Intel and Apple GPUs.
+
+- Optimize prefill, context, remaining memory and expert distribution for other hardware configurations.
+
+- Extend documentation and testing with contexts and prefill of different sizes.
+
+- Provide benchmarks on the capabilities of this architecture for 16 GB and 24 GB VRAM capacities.
+
+- Possibly implement the architecture for other, larger MoE models with these VRAM capacities available.
+
+## Credits and acknowledgments
+
+I thank the Qwen team for the open model, Unsloth for the GGUF distribution and the authors of llama.cpp and GGML for the formats, quantization tools and reference implementations. Nebula’s development uses AI assistance in writing and reviewing code, under human direction and verification. The project is independent; it retains the credits and license notices of the code from which it derives. The model weights retain their respective distribution terms.
+
+I thank Antirez for his work with ds4 and his educational activity on his YouTube channel, which made me passionate about the world of LLMs and the issues surrounding local inference.
